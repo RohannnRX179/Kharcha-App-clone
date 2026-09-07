@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/category_visuals.dart';
 import '../../../core/money/money.dart';
 import '../../../core/time/app_time.dart';
-import '../../../core/theme/app_theme.dart';
 import '../../../data/repositories/budget_repository.dart';
 import '../../../data/repositories/category_repository.dart';
 import '../../../data/repositories/profile_repository.dart';
@@ -250,7 +249,7 @@ class _SummaryBody extends StatelessWidget {
           value: net.format(),
           valueColor: net.isNegative
               ? Theme.of(context).colorScheme.error
-              : AppColors.green,
+              : Colors.green.shade700,
         ),
         if (changePct != null) ...[
           const SizedBox(height: 4),
@@ -261,7 +260,7 @@ class _SummaryBody extends StatelessWidget {
                 size: 16,
                 color: changePct >= 0
                     ? Theme.of(context).colorScheme.error
-                    : AppColors.green,
+                    : Colors.green.shade700,
               ),
               const SizedBox(width: 4),
               Text(
