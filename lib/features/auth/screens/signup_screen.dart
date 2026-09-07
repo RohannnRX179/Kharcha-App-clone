@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/errors/failure.dart';
+import '../../../core/widgets/app_surface.dart';
 import '../../../routing/routes.dart';
 import '../controllers/signup_controller.dart';
 
@@ -77,6 +78,8 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    const AppBrandMark(compact: true),
+                    const SizedBox(height: 16),
                     TextFormField(
                       controller: _nameController,
                       autofillHints: const [AutofillHints.name],

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'core/constants/app_constants.dart';
 import 'core/notifications/notification_service.dart';
+import 'core/theme/app_theme.dart';
 import 'data/remote/supabase_client_provider.dart';
 import 'data/repositories/budget_alert_service.dart';
 import 'data/repositories/notification_scheduler.dart';
@@ -16,9 +17,6 @@ import 'data/sync/sync_engine.dart';
 import 'routing/app_router.dart';
 import 'routing/root_navigator_key.dart';
 
-/// Visual design is out of scope (spec §0 rule 6) — Material 3 defaults
-/// with a single seed colour, following the system light/dark setting.
-///
 /// Also wires 2 of the sync engine's 6 trigger points (spec §9.6, T-4.5):
 /// app start once auth resolves (1) and app resume, throttled to once per
 /// 30s (2). The other four — connectivity (3) and the periodic timer (6)
@@ -160,17 +158,9 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
     return MaterialApp.router(
       title: AppConstants.appName,
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.indigo,
-          brightness: Brightness.dark,
-        ),
-      ),
+      theme: AppTheme.dark,
+      darkTheme: AppTheme.dark,
+      themeMode: ThemeMode.dark,
       routerConfig: router,
     );
   }

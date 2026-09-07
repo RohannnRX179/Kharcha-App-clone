@@ -95,15 +95,17 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # Noto Sans (OFL-licensed), embedded so the PDF export report (spec
-  # §11.11/T-12.2) can render the ₹ glyph — the `pdf` package's base14
-  # fonts (Helvetica etc.) don't cover U+20B9, only Flutter's own on-screen
-  # text rendering does. Not registered under `fonts:` below since these are
-  # loaded as raw bytes for `pw.Font.ttf(...)`, not used as a Flutter
-  # TextStyle font family.
+  # Noto Sans is also used by the shared app theme for clear, compact money UI.
   assets:
     - assets/fonts/NotoSans-Regular.ttf
     - assets/fonts/NotoSans-Bold.ttf
+
+  fonts:
+    - family: Noto Sans
+      fonts:
+        - asset: assets/fonts/NotoSans-Regular.ttf
+        - asset: assets/fonts/NotoSans-Bold.ttf
+          weight: 700
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
