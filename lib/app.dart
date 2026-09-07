@@ -140,10 +140,18 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
   @override
   Widget build(BuildContext context) {
     // Trigger 1: kick a sync as soon as a session exists (sign-in, or an
-    // already-persisted session resolving at boot).
+    // already-persisted session resolving at boot). Calls `start()` (not
+    // just `sync()`) because `SignOutController` calls `stop()` on sign-out,
+    // which latches `_stopped = true` — without re-arming it here, every
+    // sync (periodic, connectivity, manual, post-RPC) would silently no-op
+    // for the rest of the process after any sign-out→sign-in cycle. `start`
+    // is idempotent, so this is safe to call on every sign-in, including the
+    // very first one where `initState` already called it.
     ref.listen(currentSessionProvider, (previous, next) {
       if (previous == null && next != null) {
-        ref.read(syncEngineProvider).sync();
+        final engine = ref.read(syncEngineProvider);
+        engine.start();
+        engine.sync();
       }
     });
 

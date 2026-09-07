@@ -151,6 +151,7 @@ void main() {
     verifyNever(() => outboxProcessor.process());
   });
 
+
   test('a successful cycle publishes SyncIdle', () async {
     when(() => connectivity.isOnline).thenAnswer((_) async => true);
     when(() => outboxProcessor.process()).thenAnswer((_) async {});
@@ -321,6 +322,22 @@ void main() {
 
         verifyNever(() => outboxProcessor.process());
         verify(() => realtimeListener.stop()).called(1);
+      },
+    );
+
+    test(
+      'after stop(), calling start() again re-arms sync() — regression for '
+      'the Gate M2 bug (2026-09-07) where the app.dart sign-in listener '
+      'only called sync(), leaving every sync a permanent no-op after any '
+      'sign-out→sign-in cycle',
+      () async {
+        engine.start();
+        engine.stop();
+
+        engine.start();
+        await engine.sync();
+
+        verify(() => outboxProcessor.process()).called(greaterThan(0));
       },
     );
 

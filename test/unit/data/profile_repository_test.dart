@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -21,7 +22,7 @@ void main() {
     await db.profileDao.upsert(
       ProfilesCompanion.insert(
         id: 'u1',
-        householdId: 'h1',
+        householdId: const Value('h1'),
         displayName: 'Vineet',
         createdAt: now,
         updatedAt: now,

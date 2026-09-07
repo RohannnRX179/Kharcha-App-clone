@@ -70,7 +70,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -187,6 +187,21 @@ class AppDatabase extends _$AppDatabase {
       // back null until their next pull refreshes them with the real value.
       if (from < 7) {
         await m.addColumn(profiles, profiles.joinedAt);
+      }
+      // v7 -> v8 (Gate M2 bug fix, 2026-09-07): profiles.household_id
+      // becomes nullable, mirroring Postgres (nullable since T-M1.1).
+      // `leave_household`/`remove_member` genuinely null this out
+      // server-side, but the column was still declared NOT NULL here, so
+      // `Profile.fromJson` threw a cast error the moment a household-less
+      // member's own row came back from a refresh — silently preventing the
+      // leave-household flow from ever converging locally (see
+      // docs/DECISIONS.md). SQLite can't drop a NOT NULL constraint via
+      // ALTER COLUMN, so this uses drift's 12-step `alterTable` to recreate
+      // the table against the now-nullable column definition; no
+      // `columnTransformer` is needed since every existing value is copied
+      // across unchanged, just under a relaxed constraint.
+      if (from < 8) {
+        await m.alterTable(TableMigration(profiles));
       }
     },
   );

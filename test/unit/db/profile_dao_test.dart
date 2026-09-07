@@ -14,7 +14,7 @@ void main() {
     await db.profileDao.upsert(
       ProfilesCompanion.insert(
         id: 'u1',
-        householdId: 'h1',
+        householdId: const Value('h1'),
         displayName: 'Vineet',
         role: const Value('admin'),
         createdAt: now,
@@ -43,7 +43,7 @@ void main() {
       await db.profileDao.upsert(
         ProfilesCompanion.insert(
           id: 'u1',
-          householdId: 'h1',
+          householdId: const Value('h1'),
           displayName: 'Rupesh',
           createdAt: now,
           updatedAt: now,

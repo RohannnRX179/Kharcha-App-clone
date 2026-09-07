@@ -1,3 +1,4 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -93,7 +94,7 @@ void main() {
     await db.profileDao.upsert(
       ProfilesCompanion.insert(
         id: user.id,
-        householdId: householdId,
+        householdId: const Value(householdId),
         displayName: 'Test User',
         createdAt: now,
         updatedAt: now,

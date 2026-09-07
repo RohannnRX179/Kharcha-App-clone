@@ -84,18 +84,37 @@ void main() {
           );
         ''');
     }
-    // `households`/`profiles` didn't gain `base_updated_at` until Phase
-    // 14's v4 -> v5 step (see `migration_v4_to_v5_test.dart`), so at v3
-    // they're still in their original shape, unlike the 6 tables above.
-    for (final table in ['households', 'profiles']) {
-      raw.execute('''
-          CREATE TABLE $table (
-            id TEXT NOT NULL PRIMARY KEY,
-            updated_at INTEGER NOT NULL,
-            is_dirty INTEGER NOT NULL DEFAULT 0
-          );
-        ''');
-    }
+    // `households` didn't gain `base_updated_at` until Phase 14's v4 -> v5
+    // step (see `migration_v4_to_v5_test.dart`), so at v3 it's still in its
+    // original shape, unlike the 6 tables above.
+    raw.execute('''
+        CREATE TABLE households (
+          id TEXT NOT NULL PRIMARY KEY,
+          updated_at INTEGER NOT NULL,
+          is_dirty INTEGER NOT NULL DEFAULT 0
+        );
+      ''');
+    // `profiles` needs its full v3-era shape (not just id/updated_at/
+    // is_dirty) because the Gate M2 v7 -> v8 step (`AppDatabase`'s
+    // `alterTable(TableMigration(profiles))`, making household_id nullable)
+    // recreates the whole table by selecting every declared column from the
+    // source — unlike a plain `addColumn`, it can't tolerate a source table
+    // missing columns the current schema declares.
+    raw.execute('''
+        CREATE TABLE profiles (
+          id TEXT NOT NULL PRIMARY KEY,
+          household_id TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'member',
+          colour_hex TEXT NOT NULL DEFAULT '#6750A4',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          sync_status TEXT NOT NULL DEFAULT 'synced',
+          local_updated_at INTEGER NULL,
+          is_dirty INTEGER NOT NULL DEFAULT 0
+        );
+      ''');
     raw.execute('''
         CREATE TABLE outbox_entries (
           id TEXT NOT NULL,

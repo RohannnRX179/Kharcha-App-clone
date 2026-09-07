@@ -2,7 +2,11 @@ import 'package:drift/drift.dart';
 
 class Profiles extends Table {
   TextColumn get id => text()();
-  TextColumn get householdId => text()();
+
+  /// Nullable, mirroring Postgres's `profiles.household_id` (nullable since
+  /// T-M1.1) — a member with no household yet, or one who just left/was
+  /// removed (`leave_household`/`remove_member` reset this server-side).
+  TextColumn get householdId => text().nullable()();
   TextColumn get displayName => text()();
   TextColumn get role => text().withDefault(const Constant('member'))();
   TextColumn get colourHex => text().withDefault(const Constant('#6750A4'))();

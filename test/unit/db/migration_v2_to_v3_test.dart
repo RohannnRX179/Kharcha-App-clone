@@ -82,9 +82,9 @@ void main() {
       // The other push-capable tables only need enough of the v2 shape for
       // the migration's ALTER/UPDATE statements to succeed — this test
       // focuses its data-preservation assertions on categories.
-      // `households`/`profiles` (Phase 14's v4 -> v5 step) join this list
-      // too, since every version bump in this chain runs against the same
-      // hand-built file.
+      // `households` (Phase 14's v4 -> v5 step) joins this list too, since
+      // every version bump in this chain runs against the same hand-built
+      // file.
       for (final table in [
         'payment_methods',
         'expenses',
@@ -93,7 +93,6 @@ void main() {
         'recurring_rules',
         'attachments',
         'households',
-        'profiles',
       ]) {
         raw.execute('''
           CREATE TABLE $table (
@@ -103,6 +102,28 @@ void main() {
           );
         ''');
       }
+      // `profiles` needs its full v2-era shape (not just id/updated_at/
+      // is_dirty) because the Gate M2 v7 -> v8 step (`AppDatabase`'s
+      // `alterTable(TableMigration(profiles))`, making household_id
+      // nullable) recreates the whole table by selecting every declared
+      // column from the source — unlike a plain `addColumn`, it can't
+      // tolerate a source table missing columns the current schema
+      // declares.
+      raw.execute('''
+        CREATE TABLE profiles (
+          id TEXT NOT NULL PRIMARY KEY,
+          household_id TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'member',
+          colour_hex TEXT NOT NULL DEFAULT '#6750A4',
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          sync_status TEXT NOT NULL DEFAULT 'synced',
+          local_updated_at INTEGER NULL,
+          is_dirty INTEGER NOT NULL DEFAULT 0
+        );
+      ''');
       raw.execute('''
         CREATE TABLE outbox_entries (
           id TEXT NOT NULL,

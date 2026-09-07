@@ -110,7 +110,7 @@ Future<void> seedProfile(
   return db.profileDao.upsert(
     ProfilesCompanion.insert(
       id: id,
-      householdId: householdId,
+      householdId: Value(householdId),
       displayName: displayName,
       role: Value(isAdmin ? 'admin' : 'member'),
       colourHex: Value(colourHex),

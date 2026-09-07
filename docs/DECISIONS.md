@@ -2841,3 +2841,65 @@ artifacts for a human to reconcile, there was nothing left to leave here:
 the diagnostic process (force-restart to re-arm sync) *was* the fix for
 this session's test data, even though the underlying code bug that made
 it necessary remains open.
+
+## 2026-09-07 — Gate M2 leave-household bugs, both fixed in code
+
+Both bugs logged above (T-M2.7's live attempt) are now fixed, ahead of a
+friend's planned Gate M2 test pass — leaving both open would have meant
+he immediately hit the exact same crash/no-sync on the most ordinary
+flows (leave household, sign out then back in), rediscovering findings
+already root-caused rather than surfacing anything new.
+
+**Bug 1 — `profiles.householdId` non-nullable.** `domain/models/profile.dart`'s
+`householdId` changed from `required String` to `String?`
+(`@JsonKey(name: 'household_id') String? householdId`), matching
+Postgres's genuinely-nullable column. `core/db/tables/profiles_table.dart`'s
+Drift column changed from `text()()` to `text().nullable()()`. SQLite has
+no `ALTER COLUMN ... DROP NOT NULL`, so the schema bump (v7 → v8,
+`app_database.dart`) uses drift's 12-step `alterTable(TableMigration(profiles))`
+to recreate the table against the now-nullable definition rather than a
+plain `addColumn` — existing rows are copied across unchanged since no
+`columnTransformer` is needed, only the constraint relaxes. New
+`test/unit/db/migration_v7_to_v8_test.dart` proves both that existing
+rows survive and that a null `household_id` (what a `leave_household`-
+refreshed row now looks like) can actually be written afterward — the
+exact case that used to throw a cast error out of `Profile.fromJson`.
+
+That table-recreate step selects every column the current schema
+declares from the source table, unlike `addColumn` — so it can't
+tolerate a source `profiles` table missing columns the live schema has.
+Two older migration fixtures (`migration_v2_to_v3_test.dart`,
+`migration_v3_to_v4_test.dart`) had only ever built a minimal
+`id`/`updated_at`/`is_dirty` `profiles` table, since until now nothing
+past `addColumn` ever touched it — both were widened to the full v2/v3-era
+column set (same fixup precedent as T-M2.14's `sync_meta` addition to
+these same files).
+
+`currentHouseholdIdProvider` (`profile_repository.dart`) needed no change
+at all — it already read `ref.watch(currentProfileProvider).value?.householdId`
+and every consumer already treats a null household id as "no household"
+(onboarding, not signed in), since that state already existed for a
+brand-new account. The only other `Profile.householdId` read sites
+(`expense_detail_screen.dart`/`income_detail_screen.dart`'s "Unknown
+payer" fallback) pass a different (non-nullable) `Expense`/`Income`
+`householdId` through, unaffected.
+
+**Bug 2 — `SyncEngine` never re-arms after sign-out.** `app.dart`'s
+"trigger 1" (`ref.listen(currentSessionProvider, ...)`, fired on every
+sign-in) now calls `engine.start()` before `engine.sync()`, matching
+`initState()`'s own boot-time pattern — `start()` was already documented
+as idempotent (resets `_stopped = false`, uses `??=` for the timer/
+subscription), so calling it on every sign-in, including the very first
+one, is safe. New regression test in `sync_engine_test.dart`'s
+`start()/stop()` group (`after stop(), calling start() again re-arms
+sync()`) exercises the exact mechanism this fix depends on directly
+against `SyncEngine`, without needing `app.dart`'s own widget tree
+(which this project doesn't otherwise unit-test).
+
+Neither fix touches Postgres — `profiles.household_id` was already
+nullable server-side since T-M1.1; this was purely a client-side typing
+gap. `fvm flutter analyze --fatal-infos` clean; `fvm flutter test` green
+at 527 (up from 525). **Still needs a live two-device re-run** (T-M2.7's
+own leave/rejoin scenario) to move Gate M2 from "blocked" to actually
+verified — the fix is unverified against a real device/Supabase project,
+same as every fix in this codebase until it's run live once.

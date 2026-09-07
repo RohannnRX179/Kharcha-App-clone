@@ -1083,7 +1083,7 @@ void main() {
         db.profileDao.upsert(
           ProfilesCompanion.insert(
             id: id,
-            householdId: householdId,
+            householdId: Value(householdId),
             displayName: 'local name',
             createdAt: updatedAt,
             updatedAt: updatedAt,
