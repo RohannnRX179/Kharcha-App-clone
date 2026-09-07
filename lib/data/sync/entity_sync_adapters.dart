@@ -349,6 +349,13 @@ class ProfileSyncAdapter extends EntitySyncAdapter {
 
   /// All household members, not just the signed-in one — needed so Phase 6
   /// can show a per-member breakdown for display names other than "me".
+  ///
+  /// Deliberately unfiltered by household (`filterByHousehold: false`):
+  /// RLS's `profile_visible_to_me()` already scopes this correctly,
+  /// including exposing a departed member's now-null-household row to
+  /// former housemates so their local cache actually learns they left — see
+  /// `TableRemoteDataSource.selectSince()`'s doc comment and
+  /// docs/DECISIONS.md, "Profiles-tombstone gap" (2026-09-07).
   @override
   Future<List<Map<String, dynamic>>> selectSince({
     required String householdId,
@@ -358,6 +365,7 @@ class ProfileSyncAdapter extends EntitySyncAdapter {
     householdId: householdId,
     cursor: cursor,
     limit: limit,
+    filterByHousehold: false,
   );
 
   @override

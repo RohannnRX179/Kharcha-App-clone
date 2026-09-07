@@ -25,6 +25,16 @@ class ProfileDao extends DatabaseAccessor<AppDatabase> with _$ProfileDaoMixin {
         .watch();
   }
 
+  /// Every profile this device has ever cached, regardless of current
+  /// household membership — includes a departed member's row (their
+  /// `household_id` goes null on leaving, but the row itself is kept per
+  /// `profile_visible_to_me()`'s RLS design so their name still renders on
+  /// old transactions; see docs/DECISIONS.md, "Profiles-tombstone gap").
+  /// For *display* lookups only (payer/receiver names, historical exports);
+  /// member-selection UI must keep using [watchAll], scoped to the current
+  /// household, since you can't attribute a new row to someone who's left.
+  Stream<List<Profile>> watchAllKnown() => select(profiles).watch();
+
   Future<Profile?> findById(String id) =>
       (select(profiles)..where((t) => t.id.equals(id))).getSingleOrNull();
 

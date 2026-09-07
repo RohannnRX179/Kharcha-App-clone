@@ -3046,3 +3046,123 @@ separate "Sync now" tap immediately afterward pulled everything
 correctly (profiles, expenses, `sync_meta` cursors all populated) —
 confirming the race, not a permanently broken sync path. Not fixed this
 session, per the user's explicit instruction to document only.
+
+## 2026-09-07 — Profiles-tombstone gap fixed and live-verified on real two-device test
+
+Fixed the pull-filter root cause identified earlier the same day.
+`TableRemoteDataSource.selectSince()` (`lib/data/remote/table_remote_data_source.dart`)
+now takes a `filterByHousehold` parameter (default `true`, unchanged for
+every table except `profiles`). `ProfileSyncAdapter.selectSince()`
+(`lib/data/sync/entity_sync_adapters.dart`) passes `false`: visibility is
+left entirely to RLS's `profile_visible_to_me()` (0013_multitenant_rls.sql),
+which already exposes a departed member's row — even after their
+`household_id` goes null — to former housemates who share an
+expense/income with them. The old `.eq('household_id', householdId)`
+client-side filter was strictly narrower than what RLS actually allows,
+which was the entire bug: it structurally excluded a departed member's row
+from every future pull for remaining members, forever, regardless of
+cursor state. No RLS or migration change was needed — the server-side
+model was already correct (per the same day's earlier root-cause entry);
+only the client's own query was over-restrictive.
+
+Four `TableRemoteDataSource` subclasses in `test/unit/sync/*_test.dart`
+needed their `selectSince` override signatures updated to match the new
+optional parameter (Dart's override rules require it); no test assertions
+changed. `fvm flutter analyze --fatal-infos` clean, `fvm flutter test`
+green at 527.
+
+**Live-verified end to end on the real two-device setup** (`kharcha_test`
+Vineet/admin on `emulator-5554`, real Supabase project) rather than only
+unit-tested, since the whole point of this bug was that no unit test could
+catch a client query being narrower than what RLS allows:
+
+1. Pulled Vineet's real `kharcha.sqlite` off the device. His local
+   `profiles` table held 3 rows (Vineet/Tanish/Trupti) — Rupesh (who left
+   earlier the same day) was entirely absent, the residue of the bug-4
+   "Clear cache and re-download" test from the earlier root-cause session,
+   which never re-fetched him for the same underlying reason.
+2. Manually inserted a synthetic stale row for Rupesh into a copy of that
+   database — `household_id` set to the real household (simulating what
+   his cached row looked like *before* he left, `sync_status='synced'`,
+   `is_dirty=0` — i.e., the exact "looks like a confirmed, still-active
+   member" state the bug leaves behind permanently) — and pushed it back
+   onto the device in place of the real file (app force-stopped first).
+3. Rebuilt and relaunched the app from this fixed code
+   (`fvm flutter run -d emulator-5554 --dart-define-from-file=config/dev.json`).
+   The app's own startup sync — no manual "Sync now" tap needed — pulled
+   from the real Supabase project and corrected Rupesh's local row: a
+   second `kharcha.sqlite` pull immediately after confirmed
+   `household_id` back to null. `sync_meta`'s `profile` cursor
+   (`last_pulled_at`) advanced from `1788753451` to exactly
+   `1788799576` — Rupesh's real server-side `leave_household()`
+   timestamp — proving this was a genuine round trip against the live
+   backend, not a coincidence or a stale read.
+4. Confirmed on the Dashboard's "Per member" card: Rupesh's real ₹275
+   Groceries expense (authored before he left) now attributes to
+   "Unknown" rather than silently still being counted as a live member's
+   spend — visible, real-device proof the local membership state is now
+   correct.
+
+**A related, previously-latent gap surfaced by this same live check**: the
+"Unknown" label in step 4 above is itself new fallout, not a residual bug.
+`profile_visible_to_me()`'s own migration comment states its RLS design
+intent is "so a departed member's name still renders on old rows" — but no
+client code ever implemented that half. `profileById`/`householdProfilesProvider`
+(`lib/data/repositories/profile_repository.dart:141-165`) only ever look
+within the *current* household's member list, which now correctly excludes
+Rupesh — so his name, which used to accidentally still render (because the
+stale-cache bug kept him looking like a current member), now doesn't
+render at all on his old expenses. This wasn't caught before because the
+"Clear cache and re-download" fresh-pull path (bug 4, same day) also never
+brought his row back at all under the old filtered query, so this path
+never actually got exercised end-to-end until today's fix. Not fixed this
+session — flagged for the user to decide whether it's worth a follow-up
+(would need `profileById` and its handful of screen call sites to fall
+back to a broader, not-household-scoped lookup for display purposes only,
+while member-selection UI like "Paid by" correctly keeps using the
+household-scoped list).
+
+## 2026-09-07 — "Unknown" display gap (above) fixed and live-verified
+
+Fixed the follow-up gap from the profiles-tombstone fix earlier the same
+day. Added `ProfileDao.watchAllKnown()` (`lib/core/db/daos/profile_dao.dart`)
+— every locally cached profile regardless of `household_id`, as opposed to
+`watchAll(householdId)`'s current-members-only scope — and a matching
+`allKnownProfilesProvider` (`lib/data/repositories/profile_repository.dart`,
+keepAlive, alongside the existing `householdProfilesProvider`). `profileById`
+now resolves from the new provider instead of the household-scoped one,
+matching its own doc comment's original intent.
+
+Swapped every *display-only* name-lookup site from
+`householdProfilesProvider` to `allKnownProfilesProvider`: the read-only
+payer/receiver view on someone else's expense/income
+(`expense_detail_screen.dart`, `income_detail_screen.dart`), each list
+row's payer/receiver name (`expense_list_screen.dart`,
+`income_list_screen.dart`), the Dashboard's per-member breakdown, budget
+progress, and recent-activity cards (`dashboard_screen.dart`), the budget
+list's assigned-member label (`budget_list_screen.dart`), the Analytics
+6-month member-comparison chart (`analytics_screen.dart` — this one was
+worse than a label swap: `activeProfiles` filtered against the
+household-scoped list, so a departed member's entire bar series
+disappeared, not just their name), and the PDF/CSV export's per-row member
+label (`export_repository.dart`'s `_lookups()`).
+
+Deliberately left every *selection* site on `householdProfilesProvider`:
+the "Paid by" chip picker on the editable Add/Edit Expense/Income forms,
+the budget/recurring-rule target-member picker, the household management
+screen's member list, and the Expense List's filter-sheet member chips
+(the last one is a judgment call, not a hard rule — filtering by a
+departed member is arguably useful, but it's a selection widget in the
+same family as the others and was left consistent with them rather than
+special-cased). You can't attribute a new row to someone no longer in the
+household, and admin controls shouldn't list them either.
+
+New DAO test in `test/unit/db/profile_dao_test.dart` proving `watchAll`
+excludes a null-household profile that `watchAllKnown` includes.
+`fvm flutter analyze --fatal-infos` clean, `fvm flutter test` green at 528.
+
+**Live-verified** on the same real device/session as the tombstone-gap fix
+(no re-seeding needed — Vineet's local DB was already left in the
+post-fix, correctly-departed state): relaunched the app built from this
+change on `emulator-5554`, and the Dashboard's "Per member" card now shows
+**"Rupesh"** for his ₹275 Groceries expense instead of "Unknown".

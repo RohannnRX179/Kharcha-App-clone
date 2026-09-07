@@ -152,12 +152,27 @@ Stream<List<domain.Profile>> householdProfiles(Ref ref) {
       .map((rows) => rows.map((r) => r.toDomain()).toList());
 }
 
+/// Every profile this device has ever cached, including members who have
+/// since left the household — for *display* lookups only (a payer/receiver
+/// name on an old transaction, a per-member chart label), never for
+/// choosing who to attribute a new row to. See
+/// `ProfileDao.watchAllKnown()`'s doc comment and docs/DECISIONS.md,
+/// "Profiles-tombstone gap".
+@Riverpod(keepAlive: true)
+Stream<List<domain.Profile>> allKnownProfiles(Ref ref) => ref
+    .watch(appDatabaseProvider)
+    .profileDao
+    .watchAllKnown()
+    .map((rows) => rows.map((r) => r.toDomain()).toList());
+
 /// Looks up one member's display name/colour from the already-loaded
-/// [householdProfilesProvider] list — avoids a second DB subscription per
-/// expense row in the list/detail screens.
+/// [allKnownProfilesProvider] list — avoids a second DB subscription per
+/// expense row in the list/detail screens. Deliberately not
+/// [householdProfilesProvider]: a departed member must still resolve here
+/// so their name keeps rendering on their old transactions.
 @riverpod
 domain.Profile? profileById(Ref ref, String id) {
-  final profiles = ref.watch(householdProfilesProvider).value ?? const [];
+  final profiles = ref.watch(allKnownProfilesProvider).value ?? const [];
   for (final profile in profiles) {
     if (profile.id == id) return profile;
   }

@@ -48,6 +48,7 @@ class FakeCategoryRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -77,6 +78,7 @@ class FakePaymentMethodRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -106,6 +108,7 @@ class FakeIncomeRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -135,6 +138,7 @@ class FakeBudgetRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -164,6 +168,7 @@ class FakeRecurringRuleRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -193,6 +198,7 @@ class FakeAttachmentRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {

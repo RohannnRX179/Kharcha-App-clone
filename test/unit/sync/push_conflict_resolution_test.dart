@@ -52,6 +52,7 @@ class FakeExpenseRemoteDataSource implements ExpenseRemoteDataSource {
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
 
   @override

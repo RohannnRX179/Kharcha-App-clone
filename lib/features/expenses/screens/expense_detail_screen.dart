@@ -158,11 +158,16 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
     final profilesAsync = ref.watch(householdProfilesProvider);
 
     if (!_canEdit) {
+      // allKnownProfilesProvider, not householdProfilesProvider: this is a
+      // display-only lookup, so a departed member's name should still show
+      // on their old expense — see docs/DECISIONS.md, "Profiles-tombstone
+      // gap".
+      final knownProfiles = ref.watch(allKnownProfilesProvider);
       return _ReadOnlyExpenseView(
         expense: _existing!,
         categories: categoriesAsync.value ?? const [],
         methods: methodsAsync.value ?? const [],
-        payer: profilesAsync.value?.firstWhere(
+        payer: knownProfiles.value?.firstWhere(
           (p) => p.id == _existing!.userId,
           orElse: () => domain.Profile(
             id: _existing!.userId,

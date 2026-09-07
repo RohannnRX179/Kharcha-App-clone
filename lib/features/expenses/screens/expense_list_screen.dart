@@ -133,9 +133,15 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
     final categories = ref.watch(categoriesProvider).value ?? const [];
     final methods = ref.watch(paymentMethodsProvider).value ?? const [];
     final profiles = ref.watch(householdProfilesProvider).value ?? const [];
+    // allKnownProfilesProvider for the payer-name display map, not
+    // householdProfilesProvider (`profiles`, above — kept scoped to current
+    // members for the filter sheet's member picker): a departed member's
+    // name should still show on their old expense rows. See
+    // docs/DECISIONS.md, "Profiles-tombstone gap".
+    final knownProfiles = ref.watch(allKnownProfilesProvider).value ?? const [];
     final categoriesById = {for (final c in categories) c.id: c};
     final methodsById = {for (final m in methods) m.id: m};
-    final profilesById = {for (final p in profiles) p.id: p};
+    final profilesById = {for (final p in knownProfiles) p.id: p};
 
     return Scaffold(
       appBar: AppBar(

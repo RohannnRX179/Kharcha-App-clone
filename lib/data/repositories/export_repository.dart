@@ -287,7 +287,10 @@ class ExportRepository {
   Future<_Lookups> _lookups(String householdId) async {
     final categories = await _db.categoryDao.watchAll(householdId).first;
     final methods = await _db.paymentMethodDao.watchAll(householdId).first;
-    final profiles = await _db.profileDao.watchAll(householdId).first;
+    // watchAllKnown(), not watchAll(householdId): an exported row from
+    // before a member left should still show their real name, not
+    // "Unknown" — see docs/DECISIONS.md, "Profiles-tombstone gap".
+    final profiles = await _db.profileDao.watchAllKnown().first;
     return _Lookups(
       categories: {for (final c in categories) c.id: c.toDomain()},
       methods: {for (final m in methods) m.id: m.toDomain()},
