@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/theme/app_theme.dart';
+
 /// A titled card with an optional "See all" action — the shared shape of
 /// every Dashboard card (spec §11.4) and every Analytics chart card (spec
 /// §11.10).
@@ -17,7 +19,16 @@ class SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.surfaceRaised, AppColors.surface],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.outline),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -26,7 +37,11 @@ class SectionCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(title, style: Theme.of(context).textTheme.titleMedium),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
                 if (onSeeAll != null)
                   TextButton(onPressed: onSeeAll, child: const Text('See all')),
               ],
