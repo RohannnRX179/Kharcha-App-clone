@@ -52,10 +52,15 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
     _scrollController.addListener(_onScroll);
     // Dashboard "tap a member" handoff (spec §11.4 card 3): apply it once,
     // then clear it so it doesn't reapply on a later, unrelated tab visit.
+    // Clearing is deferred past this build via addPostFrameCallback — modifying
+    // a provider synchronously inside initState throws (Riverpod forbids
+    // notifying listeners while the widget tree is still building).
     final preset = ref.read(expenseListPresetFilterControllerProvider);
     if (preset != null) {
       _filter = preset;
-      ref.read(expenseListPresetFilterControllerProvider.notifier).clear();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(expenseListPresetFilterControllerProvider.notifier).clear();
+      });
     }
   }
 
