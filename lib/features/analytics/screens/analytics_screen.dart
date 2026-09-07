@@ -2,7 +2,6 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/category_visuals.dart';
 import '../../../core/money/money.dart';
 import '../../../core/time/app_time.dart';
@@ -107,9 +106,10 @@ class _MonthlyTrendChart extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     return StreamBuilder<List<MonthlyTotal>>(
       stream: repo.watchMonthlyTrend(
-        householdId: AppConstants.seedHouseholdId,
+        householdId: householdId,
         endMonth: endMonth,
         months: 12,
       ),
@@ -150,10 +150,8 @@ class _MonthlyTrendChart extends ConsumerWidget {
                         showTitles: true,
                         reservedSize: 48,
                         getTitlesWidget: (value, meta) => Text(
-                          Money(value.round()).format(
-                            compact: true,
-                            withSymbol: false,
-                          ),
+                          Money(value.round())
+                              .format(compact: true, withSymbol: false),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
@@ -175,9 +173,9 @@ class _MonthlyTrendChart extends ConsumerWidget {
                           return Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
-                              AppTime.monthLabelShort(
-                                totals[i].month,
-                              ).split(' ').first,
+                              AppTime.monthLabelShort(totals[i].month)
+                                  .split(' ')
+                                  .first,
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           );
@@ -200,7 +198,10 @@ class _MonthlyTrendChart extends ConsumerWidget {
                     LineChartBarData(
                       spots: [
                         for (var i = 0; i < totals.length; i++)
-                          FlSpot(i.toDouble(), totals[i].expensePaise.toDouble()),
+                          FlSpot(
+                            i.toDouble(),
+                            totals[i].expensePaise.toDouble(),
+                          ),
                       ],
                       color: colorScheme.error,
                       barWidth: 2.5,
@@ -210,7 +211,10 @@ class _MonthlyTrendChart extends ConsumerWidget {
                     LineChartBarData(
                       spots: [
                         for (var i = 0; i < totals.length; i++)
-                          FlSpot(i.toDouble(), totals[i].incomePaise.toDouble()),
+                          FlSpot(
+                            i.toDouble(),
+                            totals[i].incomePaise.toDouble(),
+                          ),
                       ],
                       color: incomeColor,
                       barWidth: 2.5,
@@ -247,12 +251,13 @@ class _CategoryDonutChart extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final categories = ref.watch(categoriesProvider).value ?? const [];
     final categoriesById = {for (final c in categories) c.id: c};
 
     return StreamBuilder<List<GroupedTotal>>(
       stream: repo.watchAllCategoryTotals(
-        householdId: AppConstants.seedHouseholdId,
+        householdId: householdId,
         monthStart: monthStart,
       ),
       builder: (context, snapshot) {
@@ -341,11 +346,12 @@ class _MemberComparisonChart extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final profiles = ref.watch(householdProfilesProvider).value ?? const [];
 
     return StreamBuilder<List<MemberMonthTotal>>(
       stream: repo.watchMemberMonthlyTrend(
-        householdId: AppConstants.seedHouseholdId,
+        householdId: householdId,
         endMonth: endMonth,
         months: _months,
       ),
@@ -357,7 +363,9 @@ class _MemberComparisonChart extends ConsumerWidget {
           for (var i = 0; i < _months; i++)
             AppTime.monthAfter(endMonth, -(_months - 1) + i),
         ];
-        final byKey = {for (final r in rows) (r.month, r.userId): r.amountPaise};
+        final byKey = {
+          for (final r in rows) (r.month, r.userId): r.amountPaise,
+        };
         final activeProfiles = profiles
             .where((p) => rows.any((r) => r.userId == p.id))
             .toList();
@@ -385,10 +393,8 @@ class _MemberComparisonChart extends ConsumerWidget {
                         showTitles: true,
                         reservedSize: 48,
                         getTitlesWidget: (value, meta) => Text(
-                          Money(value.round()).format(
-                            compact: true,
-                            withSymbol: false,
-                          ),
+                          Money(value.round())
+                              .format(compact: true, withSymbol: false),
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
@@ -405,9 +411,9 @@ class _MemberComparisonChart extends ConsumerWidget {
                           return Padding(
                             padding: const EdgeInsets.only(top: 4),
                             child: Text(
-                              AppTime.monthLabelShort(
-                                months[i],
-                              ).split(' ').first,
+                              AppTime.monthLabelShort(months[i])
+                                  .split(' ')
+                                  .first,
                               style: Theme.of(context).textTheme.bodySmall,
                             ),
                           );
@@ -474,12 +480,13 @@ class _PaymentMethodSplit extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final methods = ref.watch(paymentMethodsProvider).value ?? const [];
     final methodsById = {for (final m in methods) m.id: m};
 
     return StreamBuilder<List<GroupedTotal>>(
       stream: repo.watchExpenseByPaymentMethod(
-        householdId: AppConstants.seedHouseholdId,
+        householdId: householdId,
         monthStart: monthStart,
       ),
       builder: (context, snapshot) {
@@ -508,7 +515,9 @@ class _PaymentMethodSplit extends ConsumerWidget {
                       child: LinearProgressIndicator(
                         value: grandTotal == 0
                             ? 0
-                            : (g.amountPaise / grandTotal).clamp(0, 1).toDouble(),
+                            : (g.amountPaise / grandTotal)
+                                  .clamp(0, 1)
+                                  .toDouble(),
                         minHeight: 8,
                       ),
                     ),
@@ -533,11 +542,12 @@ class _DayOfWeekChart extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final monthEnd = AppTime.monthAfter(monthStart, 1);
 
     return StreamBuilder<List<WeekdayTotal>>(
       stream: repo.watchExpenseByWeekday(
-        householdId: AppConstants.seedHouseholdId,
+        householdId: householdId,
         monthStart: monthStart,
       ),
       builder: (context, snapshot) {
@@ -547,10 +557,16 @@ class _DayOfWeekChart extends ConsumerWidget {
         }
 
         final occurrences = <int, int>{for (var w = 1; w <= 7; w++) w: 0};
-        for (var d = monthStart; d.isBefore(monthEnd); d = d.add(const Duration(days: 1))) {
+        for (
+          var d = monthStart;
+          d.isBefore(monthEnd);
+          d = d.add(const Duration(days: 1))
+        ) {
           occurrences[d.weekday] = (occurrences[d.weekday] ?? 0) + 1;
         }
-        final totalByWeekday = {for (final t in totals) t.weekday: t.totalPaise};
+        final totalByWeekday = {
+          for (final t in totals) t.weekday: t.totalPaise,
+        };
         final averages = <int, int>{
           for (var w = 1; w <= 7; w++)
             w: occurrences[w]! == 0
@@ -574,7 +590,8 @@ class _DayOfWeekChart extends ConsumerWidget {
                     showTitles: true,
                     reservedSize: 48,
                     getTitlesWidget: (value, meta) => Text(
-                      Money(value.round()).format(compact: true, withSymbol: false),
+                      Money(value.round())
+                          .format(compact: true, withSymbol: false),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
@@ -639,9 +656,10 @@ class _TopMerchantsList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     return StreamBuilder<List<GroupedTotal>>(
       stream: repo.watchTopMerchants(
-        householdId: AppConstants.seedHouseholdId,
+        householdId: householdId,
         monthStart: monthStart,
       ),
       builder: (context, snapshot) {
@@ -686,12 +704,13 @@ class _MonthOverMonthTable extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final categories = ref.watch(categoriesProvider).value ?? const [];
     final categoriesById = {for (final c in categories) c.id: c};
 
     return StreamBuilder<List<CategoryMonthTotal>>(
       stream: repo.watchCategoryMonthlyTrend(
-        householdId: AppConstants.seedHouseholdId,
+        householdId: householdId,
         endMonth: endMonth,
         months: _months,
       ),
@@ -735,15 +754,17 @@ class _MonthOverMonthTable extends ConsumerWidget {
                     for (final m in months)
                       DataCell(
                         Text(
-                          Money(byKey[(m, categoryId)] ?? 0).format(
-                            compact: true,
-                          ),
+                          Money(byKey[(m, categoryId)] ?? 0)
+                              .format(compact: true),
                         ),
                       ),
-                    DataCell(_DeltaCell(
-                      previous: byKey[(months[months.length - 2], categoryId)] ?? 0,
-                      current: byKey[(months.last, categoryId)] ?? 0,
-                    )),
+                    DataCell(
+                      _DeltaCell(
+                        previous:
+                            byKey[(months[months.length - 2], categoryId)] ?? 0,
+                        current: byKey[(months.last, categoryId)] ?? 0,
+                      ),
+                    ),
                   ],
                 ),
             ],

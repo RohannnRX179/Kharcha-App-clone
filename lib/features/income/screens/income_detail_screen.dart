@@ -24,8 +24,7 @@ class IncomeDetailScreen extends ConsumerStatefulWidget {
   final String? id;
 
   @override
-  ConsumerState<IncomeDetailScreen> createState() =>
-      _IncomeDetailScreenState();
+  ConsumerState<IncomeDetailScreen> createState() => _IncomeDetailScreenState();
 }
 
 class _IncomeDetailScreenState extends ConsumerState<IncomeDetailScreen> {
@@ -59,7 +58,14 @@ class _IncomeDetailScreenState extends ConsumerState<IncomeDetailScreen> {
   String? get _currentUserId =>
       ref.read(supabaseClientProvider).auth.currentUser?.id;
 
-  bool get _isAdmin => ref.read(currentProfileProvider).value?.isAdmin ?? false;
+  String get _householdId => ref.read(currentHouseholdIdProvider) ?? '';
+
+  // See the identical fix + rationale on `ExpenseDetailScreen._isAdmin`
+  // (docs/DECISIONS.md) — `ref.watch`, not `ref.read`, so this rebuilds once
+  // `currentProfileProvider` resolves instead of possibly latching a stale
+  // `false` from before it did.
+  bool get _isAdmin =>
+      ref.watch(currentProfileProvider).value?.isAdmin ?? false;
 
   bool get _canEdit {
     if (_existing == null) return true;
@@ -93,7 +99,9 @@ class _IncomeDetailScreenState extends ConsumerState<IncomeDetailScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return Scaffold(
-        appBar: AppBar(title: Text(widget.id == null ? 'Add income' : 'Income')),
+        appBar: AppBar(
+          title: Text(widget.id == null ? 'Add income' : 'Income'),
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -232,7 +240,7 @@ class _IncomeDetailScreenState extends ConsumerState<IncomeDetailScreen> {
     final repo = ref.read(incomeRepositoryProvider);
     if (_existing == null) {
       await repo.create(
-        householdId: AppConstants.seedHouseholdId,
+        householdId: _householdId,
         userId: userId,
         amountPaise: money.paise,
         categoryId: _categoryId,
@@ -356,8 +364,13 @@ class _DatePicker extends StatelessWidget {
           label: const Text('Today'),
           selected: isToday,
           onSelected: (_) => onChanged(
-            DateTime(now.year, now.month, now.day, local.hour, local.minute)
-                .toUtc(),
+            DateTime(
+              now.year,
+              now.month,
+              now.day,
+              local.hour,
+              local.minute,
+            ).toUtc(),
           ),
         ),
         OutlinedButton.icon(
@@ -379,8 +392,13 @@ class _DatePicker extends StatelessWidget {
     );
     if (date == null) return;
     onChanged(
-      DateTime(date.year, date.month, date.day, local.hour, local.minute)
-          .toUtc(),
+      DateTime(
+        date.year,
+        date.month,
+        date.day,
+        local.hour,
+        local.minute,
+      ).toUtc(),
     );
   }
 }

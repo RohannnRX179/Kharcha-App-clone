@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/category_visuals.dart';
 import '../../../core/money/money.dart';
 import '../../../core/time/app_time.dart';
@@ -119,6 +118,7 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
   @override
   Widget build(BuildContext context) {
     final repo = ref.watch(expenseRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final currentUserId = ref
         .watch(supabaseClientProvider)
         .auth
@@ -168,7 +168,7 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
           ),
           StreamBuilder<int>(
             stream: repo.watchFilteredTotal(
-              householdId: AppConstants.seedHouseholdId,
+              householdId: householdId,
               filter: _filter,
             ),
             builder: (context, snapshot) {
@@ -205,7 +205,7 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
           Expanded(
             child: StreamBuilder<List<domain.Expense>>(
               stream: repo.watchFiltered(
-                householdId: AppConstants.seedHouseholdId,
+                householdId: householdId,
                 filter: _filter,
                 limit: _limit,
               ),
@@ -443,7 +443,14 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('No expenses match these filters.'),
+          // T-M2.10: a genuinely empty household (no filters applied at
+          // all) reads oddly with filter-specific copy — distinguish it
+          // from "your filters excluded everything".
+          Text(
+            hasFilters
+                ? 'No expenses match these filters.'
+                : 'No expenses yet — tap + to add your first one.',
+          ),
           if (hasFilters) ...[
             const SizedBox(height: 8),
             TextButton(onPressed: onClear, child: const Text('Clear filters')),

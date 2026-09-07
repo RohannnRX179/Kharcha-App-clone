@@ -80,7 +80,19 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
   String? get _currentUserId =>
       ref.read(supabaseClientProvider).auth.currentUser?.id;
 
-  bool get _isAdmin => ref.read(currentProfileProvider).value?.isAdmin ?? false;
+  String get _householdId => ref.read(currentHouseholdIdProvider) ?? '';
+
+  // `ref.watch`, not `ref.read`: this must rebuild once `currentProfileProvider`
+  // resolves. It's `keepAlive` and usually already warm by the time a user
+  // navigates here, but on a screen opened before anything else has read it
+  // (e.g. deep-linked straight in), a one-shot `ref.read` taken while the
+  // provider is still `AsyncLoading` would never be re-evaluated — no widget
+  // was watching it, so its later resolution triggers no rebuild here — and
+  // an admin would be incorrectly stuck on the read-only view. Found via a
+  // Phase 15 widget test (`expense_detail_screen_test.dart`); see
+  // docs/DECISIONS.md.
+  bool get _isAdmin =>
+      ref.watch(currentProfileProvider).value?.isAdmin ?? false;
 
   bool get _canEdit {
     if (_existing == null) return true;
@@ -304,7 +316,7 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
 
     final repo = ref.read(expenseRepositoryProvider);
     final isDuplicate = await repo.hasPossibleDuplicate(
-      householdId: AppConstants.seedHouseholdId,
+      householdId: _householdId,
       userId: userId,
       amountPaise: money.paise,
       categoryId: _categoryId,
@@ -321,7 +333,7 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
 
     if (_existing == null) {
       final id = await repo.create(
-        householdId: AppConstants.seedHouseholdId,
+        householdId: _householdId,
         userId: userId,
         amountPaise: money.paise,
         categoryId: _categoryId,
@@ -330,11 +342,7 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
         note: _noteController.text.trim(),
         merchant: _merchantController.text.trim(),
       );
-      unawaited(
-        ref
-            .read(budgetAlertServiceProvider)
-            .evaluate(AppConstants.seedHouseholdId),
-      );
+      unawaited(ref.read(budgetAlertServiceProvider).evaluate(_householdId));
       if (!mounted) return;
       Navigator.of(context).pop();
       _showSavedSnackbar(id);
@@ -350,11 +358,7 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
           merchant: _merchantController.text.trim(),
         ),
       );
-      unawaited(
-        ref
-            .read(budgetAlertServiceProvider)
-            .evaluate(AppConstants.seedHouseholdId),
-      );
+      unawaited(ref.read(budgetAlertServiceProvider).evaluate(_householdId));
       if (!mounted) return;
       Navigator.of(context).pop();
     }
@@ -463,16 +467,15 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
     final result = await ref
         .read(attachmentRepositoryProvider)
         .addFromFile(
-          householdId: AppConstants.seedHouseholdId,
+          householdId: _householdId,
           expenseId: widget.id!,
           uploadedBy: userId,
           sourcePath: picked.path,
         );
     if (!mounted) return;
     result.fold((_) {}, (failure) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(failure.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(failure.message)));
     });
   }
 }
@@ -893,7 +896,9 @@ class _ReceiptThumbnailState extends ConsumerState<_ReceiptThumbnail> {
               height: 64,
               child: _file == null
                   ? ColoredBox(
-                      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .surfaceContainerHighest,
                       child: const Icon(Icons.receipt_long_outlined),
                     )
                   : Image.file(_file!, fit: BoxFit.cover),

@@ -5,6 +5,11 @@ class AppRoutes {
 
   static const splash = '/splash';
   static const login = '/login';
+  static const signup = '/signup';
+  static const verifyEmail = '/verify-email';
+  static const onboarding = '/onboarding';
+  static const onboardingCreate = '/onboarding/create';
+  static const onboardingJoin = '/onboarding/join';
 
   static const dashboard = '/';
   static const expenses = '/expenses';
@@ -27,7 +32,7 @@ class AppRoutes {
 
   static const categories = '/categories';
   static const paymentMethods = '/payment-methods';
-  static const members = '/members';
+  static const household = '/household';
   static const export = '/export';
   static const receiptViewer = '/receipt/:attachmentId';
   static const diagnostics = '/diagnostics';

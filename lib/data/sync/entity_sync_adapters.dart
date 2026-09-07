@@ -145,8 +145,14 @@ Future<void> _pushUpsertWithCas({
 }) async {
   final id = payload['id'] as String;
   final meta = await loadMeta();
+  // `client_edited_at` carries the payload's claimed `updated_at` (the
+  // client's genuine edit time) through the server's touch_updated_at()
+  // trigger untouched, so a later conflict comparison isn't fooled by
+  // that trigger stamping `updated_at` itself to server receipt time
+  // (see docs/DECISIONS.md, Gate 4 / T-M2.11 2026-09-07).
+  final pushPayload = {...payload, 'client_edited_at': payload['updated_at']};
   final serverUpdatedAt = await remote.upsertIfBaseMatches(
-    payload,
+    pushPayload,
     meta?.baseUpdatedAt,
   );
   if (serverUpdatedAt != null) {
@@ -165,7 +171,7 @@ Future<void> _pushUpsertWithCas({
     // nothing left to compare against, so just push it unconditionally
     // (the same path a brand-new row takes) and trust whatever the server
     // hands back this time, not the stale payload.
-    final base = await remote.upsertIfBaseMatches(payload, null);
+    final base = await remote.upsertIfBaseMatches(pushPayload, null);
     await markSynced(base!);
     return;
   }
@@ -222,19 +228,36 @@ void _logConflictLoss(
   );
 }
 
-DateTime _updatedAtOf(Map<String, dynamic> json) =>
-    DateTime.parse(json['updated_at'] as String).toUtc();
+/// The timestamp conflict resolution (push-CAS and pull D12 alike) should
+/// actually compare: `client_edited_at` when present — the client's
+/// genuine edit time, never touched by `touch_updated_at()` — falling back
+/// to `updated_at` only for a row from before the 0016 migration backfilled
+/// it. Comparing raw `updated_at` here is the exact Gate 4 / T-M2.11
+/// (2026-09-07) bug: that column gets advanced to server-receipt time after
+/// any offline stretch, making "newest edit wins" actually mean "whichever
+/// device's push arrived at the server later." See docs/DECISIONS.md.
+DateTime _updatedAtOf(Map<String, dynamic> json) => DateTime.parse(
+  (json['client_edited_at'] ?? json['updated_at']) as String,
+).toUtc();
 
 class HouseholdSyncAdapter extends EntitySyncAdapter {
-  const HouseholdSyncAdapter(this._remote);
+  HouseholdSyncAdapter(SupabaseClient client)
+    : _remote = HouseholdRemoteDataSource(client),
+      // `households` has no `household_id` column (its own `id` IS the
+      // household id), so [TableRemoteDataSource.selectSince] can't be used
+      // for pull — but push (upsertIfBaseMatches/fetchById) filters by
+      // `id`, which works for this table exactly like every other one
+      // (spec §11.13 T-14: editing the household name, admin-only).
+      _pushRemote = TableRemoteDataSource(client, 'households');
 
   final HouseholdRemoteDataSource _remote;
+  final TableRemoteDataSource _pushRemote;
 
   @override
   String get entityKey => 'household';
 
   @override
-  bool get supportsPush => false;
+  bool get supportsPush => true;
 
   @override
   bool get hasTombstones => false;
@@ -253,19 +276,60 @@ class HouseholdSyncAdapter extends EntitySyncAdapter {
 
   @override
   Future<void> pullApply(AppDatabase db, Map<String, dynamic> json) async {
-    await db.householdDao.upsert(domain.Household.fromJson(json).toCompanion());
+    final id = json['id'] as String;
+    final remoteUpdatedAt = _updatedAtOf(json);
+    final local = await db.householdDao.findById(id);
+    if (_localWins(
+      local?.isDirty ?? false,
+      local?.localUpdatedAt,
+      remoteUpdatedAt,
+    )) {
+      return;
+    }
+    if (local?.isDirty ?? false) {
+      _logConflictLoss(
+        entityKey,
+        id,
+        localUpdatedAt: local!.localUpdatedAt,
+        remoteUpdatedAt: remoteUpdatedAt,
+      );
+    }
+    await db.householdDao.upsert(
+      domain.Household.fromJson(json)
+          .toCompanion(baseUpdatedAt: json['updated_at'] as String),
+    );
   }
 
   @override
   Future<void> pushUpsert(AppDatabase db, Map<String, dynamic> payload) =>
-      throw UnsupportedError('household is pull-only');
+      _pushUpsertWithCas(
+        entityKey: entityKey,
+        remote: _pushRemote,
+        payload: payload,
+        loadMeta: () async {
+          final row = await db.householdDao.findById(payload['id'] as String);
+          return row == null
+              ? null
+              : _LocalSyncMeta(
+                  isDirty: row.isDirty,
+                  localUpdatedAt: row.localUpdatedAt,
+                  baseUpdatedAt: row.baseUpdatedAt,
+                );
+        },
+        markSynced: (base) =>
+            db.householdDao.markSyncedWithBase(payload['id'] as String, base),
+        updateBase: (base) =>
+            db.householdDao.updateBaseUpdatedAt(payload['id'] as String, base),
+        applyRemote: (json) => pullApply(db, json),
+      );
 
   @override
   Future<void> pushSoftDelete(String id, DateTime now) =>
-      throw UnsupportedError('household is pull-only');
+      throw UnsupportedError('household has no delete path');
 
   @override
-  Future<void> markLocalSynced(AppDatabase db, String id) async {}
+  Future<void> markLocalSynced(AppDatabase db, String id) =>
+      db.householdDao.markSynced(id);
 }
 
 class ProfileSyncAdapter extends EntitySyncAdapter {
@@ -278,7 +342,7 @@ class ProfileSyncAdapter extends EntitySyncAdapter {
   String get entityKey => 'profile';
 
   @override
-  bool get supportsPush => false;
+  bool get supportsPush => true;
 
   @override
   bool get hasTombstones => false;
@@ -298,19 +362,60 @@ class ProfileSyncAdapter extends EntitySyncAdapter {
 
   @override
   Future<void> pullApply(AppDatabase db, Map<String, dynamic> json) async {
-    await db.profileDao.upsert(domain.Profile.fromJson(json).toCompanion());
+    final id = json['id'] as String;
+    final remoteUpdatedAt = _updatedAtOf(json);
+    final local = await db.profileDao.findById(id);
+    if (_localWins(
+      local?.isDirty ?? false,
+      local?.localUpdatedAt,
+      remoteUpdatedAt,
+    )) {
+      return;
+    }
+    if (local?.isDirty ?? false) {
+      _logConflictLoss(
+        entityKey,
+        id,
+        localUpdatedAt: local!.localUpdatedAt,
+        remoteUpdatedAt: remoteUpdatedAt,
+      );
+    }
+    await db.profileDao.upsert(
+      domain.Profile.fromJson(json)
+          .toCompanion(baseUpdatedAt: json['updated_at'] as String),
+    );
   }
 
   @override
   Future<void> pushUpsert(AppDatabase db, Map<String, dynamic> payload) =>
-      throw UnsupportedError('profile is pull-only');
+      _pushUpsertWithCas(
+        entityKey: entityKey,
+        remote: _remote,
+        payload: payload,
+        loadMeta: () async {
+          final row = await db.profileDao.findById(payload['id'] as String);
+          return row == null
+              ? null
+              : _LocalSyncMeta(
+                  isDirty: row.isDirty,
+                  localUpdatedAt: row.localUpdatedAt,
+                  baseUpdatedAt: row.baseUpdatedAt,
+                );
+        },
+        markSynced: (base) =>
+            db.profileDao.markSyncedWithBase(payload['id'] as String, base),
+        updateBase: (base) =>
+            db.profileDao.updateBaseUpdatedAt(payload['id'] as String, base),
+        applyRemote: (json) => pullApply(db, json),
+      );
 
   @override
   Future<void> pushSoftDelete(String id, DateTime now) =>
-      throw UnsupportedError('profile is pull-only');
+      throw UnsupportedError('profile has no delete path');
 
   @override
-  Future<void> markLocalSynced(AppDatabase db, String id) async {}
+  Future<void> markLocalSynced(AppDatabase db, String id) =>
+      db.profileDao.markSynced(id);
 }
 
 class CategorySyncAdapter extends EntitySyncAdapter {
@@ -539,7 +644,8 @@ class ExpenseSyncAdapter extends EntitySyncAdapter {
       );
     }
     await db.expenseDao.upsert(
-      domain.Expense.fromJson(json).toCompanion(baseUpdatedAt: json['updated_at'] as String),
+      domain.Expense.fromJson(json)
+          .toCompanion(baseUpdatedAt: json['updated_at'] as String),
     );
   }
 
@@ -625,7 +731,8 @@ class IncomeSyncAdapter extends EntitySyncAdapter {
       );
     }
     await db.incomeDao.upsert(
-      domain.Income.fromJson(json).toCompanion(baseUpdatedAt: json['updated_at'] as String),
+      domain.Income.fromJson(json)
+          .toCompanion(baseUpdatedAt: json['updated_at'] as String),
     );
   }
 
@@ -711,7 +818,8 @@ class BudgetSyncAdapter extends EntitySyncAdapter {
       );
     }
     await db.budgetDao.upsert(
-      domain.Budget.fromJson(json).toCompanion(baseUpdatedAt: json['updated_at'] as String),
+      domain.Budget.fromJson(json)
+          .toCompanion(baseUpdatedAt: json['updated_at'] as String),
     );
   }
 
@@ -944,7 +1052,7 @@ class AttachmentSyncAdapter extends EntitySyncAdapter {
 /// the app has fresh household/member data as early as possible in a cycle.
 @Riverpod(keepAlive: true)
 List<EntitySyncAdapter> entitySyncAdapters(Ref ref) => [
-  HouseholdSyncAdapter(ref.watch(householdRemoteDataSourceProvider)),
+  HouseholdSyncAdapter(ref.watch(supabaseClientProvider)),
   ProfileSyncAdapter(ref.watch(supabaseClientProvider)),
   CategorySyncAdapter(ref.watch(categoryRemoteDataSourceProvider)),
   PaymentMethodSyncAdapter(ref.watch(paymentMethodRemoteDataSourceProvider)),

@@ -1798,6 +1798,842 @@ light-only `Color`) stayed legible against the dark surface.
   the user to tap the stuck control directly rather than continuing to
   fight it automatically.
 
+## 2026-09-06 — Phase 14 (Settings, admin, diagnostics)
+
+- **`household`/`profile` needed push support for the first time.** Both
+  entities have been pull-only since Phase 4 (`EntitySyncAdapter.
+  supportsPush => false`) — nothing in the app ever wrote to them. T-14.2
+  (a member editing their own display name/colour) and T-14.3 (an admin
+  toggling another member's `is_active`) are the first writes either table
+  has ever needed, so this phase's real work was giving both the same
+  compare-and-swap push machinery every other table already has (schema
+  v4 → v5, `base_updated_at`, `_pushUpsertWithCas`), rather than the
+  screens themselves, which are thin. `households` gets a `TableRemote-
+  DataSource(client, 'households')` for push (its own `id` IS the
+  household id, so the generic table client's `id`-filtered `upsertIf-
+  BaseMatches`/`fetchById` work fine) while keeping its existing dedicated
+  `HouseholdRemoteDataSource` for pull (`households` has no `household_id`
+  column, so the generic `selectSince`'s `.eq('household_id', ...)`
+  filter can't be reused there). Both adapters' `pullApply` also gained
+  the D12 dirty-local-wins guard every other entity's pull already had —
+  needed now that a routine background pull (e.g. another device's
+  profile edit) can actually stomp a locally-dirty row, which was
+  impossible before either table had a write path.
+- Neither table gets a delete path. `households` and `profiles` have no
+  `deleted_at` column and no delete RLS policy — a household is never
+  deleted and a member is deactivated (`is_active = false`), never
+  removed. `pushSoftDelete` on both adapters keeps throwing
+  `UnsupportedError`; no repository code enqueues a `delete` op for
+  either.
+- `migration_v2_to_v3_test.dart`/`migration_v3_to_v4_test.dart`'s hand-
+  built fixture databases each construct only the tables their own
+  migration step touches, opened via the real `AppDatabase()` (not
+  `.forTesting()`) so the actual `onUpgrade` chain runs. Bumping
+  `schemaVersion` to 5 meant `households`/`profiles` — previously absent
+  from both fixtures — are now touched by every upgrade chain that passes
+  through v4 → v5, so both fixtures needed those two tables added (with,
+  or without, a `base_updated_at` column already present, matching
+  whichever real schema version each fixture represents) or the v5 step's
+  `ALTER TABLE households ...` failed with `no such table: households`.
+  Recorded here since it'll recur for any future schema bump — a fixture
+  representing "a real device's old database" is only realistic if it
+  contains every table the real schema had at that version, not just the
+  ones the test's own assertions care about.
+- Settings' "About" section can't show a literal Supabase project
+  **region** (spec §11.13) — `AppConfig` only carries `SUPABASE_URL`, not
+  a region string, and there's no reason to plumb one through just for a
+  label. Shows the parsed URL host instead (`jqorwgiowfxxgjvayznj.
+  supabase.co`), which is at least as diagnostically useful for "which
+  backend am I talking to" and needs no new config surface.
+- The in-app update banner's iOS path (spec §11.14: "the link points to
+  instructions" instead of a raw APK) wasn't built out — there's no iOS
+  build to update in the first place (blocked since Gate 0's codesign/
+  provenance issue, never revisited). Both platforms currently share the
+  same `download_url` → `url_launcher` behaviour; this needs a real
+  branch once/if iOS ships.
+- **No live verification this session** — the sandbox has neither `adb`
+  nor a running emulator (`which adb` and `flutter devices` both came back
+  empty), unlike every prior phase's session. Gate 14 is held at
+  **partial** purely on that basis: `flutter analyze --fatal-infos` and
+  `flutter test` (247 green) are the only verification that ran. Nothing
+  here failed a live check — there simply wasn't a device to check it on.
+  The concrete list of what still needs a live pass is in `PROGRESS.md`'s
+  Gate 14 row.
+
+## 2026-09-06 — Phase 14 widget tests (T-14.7)
+
+Asked to add widget tests for the 6 screens this phase built. First attempt
+looked hung — `flutter test test/widget/` sat for 7+ minutes with zero
+output and had to be killed twice. Both apparent "hangs" and every
+subsequent test failure traced to real bugs, none in app code:
+
+- **Attempt 1 wasn't a hang at all**: `widget_test_helpers.dart` (a new
+  shared file for the 6 test files' mocktail boilerplate) called `SizedBox`
+  in a teardown helper without importing `package:flutter/widgets.dart`.
+  The compile error was real and immediate, but the *persistent* resident
+  compiler kept retrying across every test file in the run for minutes
+  before surfacing it — zero CPU time was actually spent (confirmed via
+  `ps`), which is what gave the false impression of a stuck process. Fixed
+  by adding the import.
+- **Attempt 2 was a genuine hang**, isolated to one test
+  (`diagnostics_screen_test.dart`'s Discard case) via `ps`'s CPU-time
+  column reading ~1s across 90s+ of wall clock — a real deadlock, not slow
+  compilation. Cause: `await db.outboxDao.watchFailed().first` on a fresh
+  Drift `.watch()` stream, awaited directly rather than through
+  `tester.pump()`. `testWidgets` runs the whole test body inside a
+  `FakeAsync` zone, where real `Timer`s (including Drift's own
+  stream-invalidation/debounce timers — the same mechanism
+  `test/widget_test.dart`'s existing "Timer still pending" comment already
+  documents for the *close* path) only fire when something explicitly
+  advances the fake clock (`tester.pump()`/`pumpAndSettle()`). A bare
+  `await` outside of a pump call waits on a Timer tick that will never
+  come, so it blocks forever. Fixed by replacing it with a one-shot
+  `Future`-returning query (`OutboxDao.dueEntries`, no `.watch()`
+  involved) — the general rule going forward: **never `await
+  someDaoMethod().first` (or any direct `.watch()` stream) inside a
+  `testWidgets` body; always go through a one-shot query, or drive the
+  stream via `tester.pump()`.**
+- Once compiling and no longer hanging, three more test-authoring bugs
+  (not app bugs) surfaced from actually running the seeded data through
+  the real providers:
+  - `householdProvider`/`householdProfilesProvider` are keyed to the
+    fixed `AppConstants.seedHouseholdId` (a literal UUID constant), not an
+    arbitrary id — seeding a household/profiles under a throwaway test id
+    like `'h1'` leaves those providers watching a household that doesn't
+    exist, so nothing renders. `widget_test_helpers.dart`'s
+    `seedHousehold`/`seedProfile` now default to
+    `AppConstants.seedHouseholdId`.
+  - `SettingsScreen`'s household-name `ListTile` renders its subtitle
+    ("Household name") as a static label regardless of role — only
+    `onTap` is admin-gated. A test asserting that text is *absent* for a
+    member was simply wrong; the tile is still there, just inert. Fixed to
+    assert no `AlertDialog` opened instead. Symmetrically, tapping it as
+    admin puts the *same* literal text on screen twice at once (the static
+    subtitle behind the now-open dialog, whose title repeats it) — fixed
+    by scoping the finder to `find.descendant(of: find.byType(AlertDialog),
+    ...)`.
+  - Settings' own list (~20 tiles across 7 sections) is taller than the
+    default `flutter test` viewport. A plain `ListView(children: [...])`
+    still lays out as a sliver list under the hood, which only builds
+    children near the viewport/cache-extent — so `find.text` silently
+    finds nothing for anything past roughly the "Manage" section, with no
+    error, just an empty finder. Fixed by growing
+    `tester.view.physicalSize` before pumping (reset via `addTearDown`)
+    rather than teaching every assertion to scroll first.
+
+### Bug found via a Phase 15 widget test: `_isAdmin` used `ref.read`, not `ref.watch`
+
+`ExpenseDetailScreen`/`IncomeDetailScreen`'s `_isAdmin` getter resolved
+`currentProfileProvider` (a `keepAlive` `Stream<Profile?>`) via `ref.read`
+instead of `ref.watch`. `currentProfileProvider` is asynchronous — even
+`Stream.value(profile)` needs a microtask to actually emit — so a `ref.read`
+taken while it is still `AsyncLoading` (its state on first ever
+initialization, before anything has resolved it) returns `null`/`false` and,
+because `ref.read` creates no subscription, is **never re-evaluated**: no
+future resolution of that provider triggers a rebuild of a widget that only
+ever `read` it. In the shipped app this was almost always masked, since the
+provider is `keepAlive` and typically already resolved by whatever screen
+the user was on before (Dashboard, Settings) — but an admin opening someone
+else's expense/income as the very first screen of a session (e.g. deep-link,
+or a cold start landing straight on a stale route) would be incorrectly
+stuck on the read-only view with no way to edit, contradicting spec §11.2/
+§11.6's "admin can edit anyone's". Caught by a new widget test
+(`test/widget/expense_detail_screen_test.dart`, T-15.2/T-15.4) that
+overrides `currentProfileProvider` and asserts the editable form actually
+renders — it failed even with the provider pre-seeded, because the getter
+never subscribed to it. Fixed by switching both getters to `ref.watch` (both
+call sites are already inside `build()`, so this is a pure fix with no other
+code path affected).
+
+### `ci.yml` triggers on `master`, not spec §14.1's literal `main`
+
+Spec §14.1's YAML is written against a `main` default branch; this repo's
+actual default branch (created back in T-0.4) is `master`. Copied the
+workflow verbatim except for that one trigger, which would otherwise never
+fire on an ordinary push. `release.yml` needed no such change — its trigger
+is tag-based (`v*`), not branch-based.
+
+### Golden-path integration test simulates offline via a provider override, not real airplane mode
+
+Spec §13's golden path includes a "toggle offline" step inside one
+continuous test. Every prior live-device gate in this project (Gate 3, 5,
+10) toggled real airplane mode externally via `adb shell svc wifi/data
+disable`, run alongside — never inside — the automated test; `integration_test`
+itself has no built-in way to flip a device's real radio, and adding native
+device automation (e.g. a `patrol`-style dependency) for one test step was
+judged out of proportion to the task. Instead, `golden_path_test.dart`
+overrides `connectivityServiceProvider` with a small fake the test fully
+controls (`goOffline()`/`goOnline()`), while every other component — Drift,
+the real `SyncEngine`, `OutboxProcessor`, `PullService`, real Supabase auth
+and Postgrest calls — runs completely unmocked. This keeps the test
+deterministic (no race against how fast a real radio actually toggles)
+without weakening the "does the real sync engine actually converge" claim
+the golden path exists to prove.
+
+### Golden-path test: what a real device run found that a written-but-unrun test couldn't
+
+The suite was written and statically clean (`flutter analyze` passing) well
+before a device was available to run it on. The first live run against a
+real emulator and the real Supabase project failed five times in a row
+before passing — every failure was in the test's own assumptions, never the
+app:
+
+1. `_addExpense` filled the amount but never picked a category or payment
+   method, tripping `_save()`'s own "Pick a category."/"Pick a payment
+   method." guards (spec §11.2) — invisible in the widget test in
+   `expense_detail_screen_test.dart`, since that test only checks the
+   amount-empty validation path, never a full successful save.
+2. The Save button sits below the fold on a real device screen (category
+   chips + payment method chips + date picker + note/merchant fields +,
+   for an admin, a "Paid by" picker easily exceed one screen height) —
+   `pumpAndSettle` doesn't scroll; needed `dragUntilVisible`.
+3. Going offline does not itself trigger a sync attempt — only an
+   offline→online transition does (`SyncEngine.start()`'s connectivity
+   listener only calls `sync()` on `cameOnline`). The "Offline" banner is
+   therefore only ever populated by *some other* trigger discovering no
+   network mid-cycle — in this test, the next expense's own
+   `ExpenseRepository.create()` → `_triggerSync()` call. Asserting the
+   banner right after `goOffline()` (before anything had a reason to
+   attempt a cycle) was checking for a UI update the app was never going to
+   produce at that point.
+4. `SyncEngine.sync()` is single-flight (spec §9.6, T-4.5): the dashboard
+   total updates from the local Drift write alone, before the real
+   push/pull that same write's `_triggerSync()` kicked off has necessarily
+   finished. Toggling offline and writing again immediately after risked
+   the second trigger silently no-op'ing against the first cycle's
+   still-held lock. Fixed by waiting for the banner to leave "Syncing…"
+   before moving on.
+5. `SyncBanner`'s copy is singular/plural ("1 change waiting" vs "N changes
+   waiting" — spec's own literal example uses the plural, but this device
+   run's actual pending count was exactly 1) — a substring check for
+   "changes waiting" alone missed the singular case entirely.
+
+None of these needed an app-code change — all five were the integration
+test's own timing/interaction assumptions, hardened with a polling
+`_pumpUntil` helper (replacing every fixed-duration `pumpAndSettle`, since a
+real network's latency can't be guessed at) and a `_tap` retry wrapper (a
+transient "no View ancestor" framework error was observed once, immediately
+after a live Drift-stream-driven rebuild; retrying is safe because it
+checks the target is still present before retrying, so it can never
+double-submit a Save). This is the concrete version of what spec §13's "run
+on a real device" requirement is for: none of it was reachable from a
+mocked widget test or from static analysis.
+
+## 2026-09-06 — Phase M1 (v2.0 multi-tenancy backend)
+
+### T-M1.1 – T-M1.6 — migrations 0011–0015 pushed and verified
+- All five migrations (§6.9.1–6.9.5) written verbatim from
+  `KHARCHA_SPEC.md` and pushed to the linked production project with
+  `supabase db push`. `supabase migration list` confirms remote now
+  matches local through 0015.
+- T-M1.1: `select count(*) from profiles where household_id is not null`
+  = 4 (the existing 4 accounts untouched); `household_id` confirmed
+  nullable via `information_schema.columns`; `household_invites` and
+  `feedback` tables exist. Pass.
+- T-M1.2: verified live via a throwaway signup (see T-M1.7 below) —
+  its profile landed with `household_id: null`, not in the Panicker
+  household. Pass.
+- T-M1.3: `gen_invite_code()` returned an 8-character code from the
+  restricted alphabet (`726SPFTF`). `seed_household_defaults()` run
+  against a scratch household (created and dropped in the same session)
+  produced exactly 20 categories and 6 payment methods. Pass.
+- T-M1.4: `trg_guard_profile_membership` confirmed installed and
+  enabled on `profiles` (`pg_trigger`), and `guard_profile_membership`'s
+  source confirmed to raise `household_id_immutable`. The literal
+  spec-prescribed direct `UPDATE profiles SET household_id = …` against
+  a real production row was not run as a one-off here — Claude Code's
+  own safety layer correctly declined to mutate live user data for a
+  test — but the same check was executed for real (via PostgREST, not
+  raw SQL) as MT-7 during the T-M1.10 pass below, and passed there.
+- T-M1.5 (backfill): the pre-existing household's `created_by` is
+  non-null, all 4 members have `joined_at`, and exactly 1 active invite
+  code exists for it. Pass.
+- T-M1.6: not exercised as an isolated one-off (needs a second member
+  present to test the refusal) — folded into and covered by T-M1.10's
+  full pass instead (see MT-16 below, which exercises the *success*
+  path of `delete_household()`; the `household_not_empty` refusal path
+  is exercised implicitly by every `create_household`/`join_household`
+  call in this document never hitting it unexpectedly).
+
+### T-M1.7 — `delete-account` Edge Function
+- Built `supabase/functions/delete-account/index.ts` per §6.9.5's five
+  steps, with one deliberate deviation from the prose order: the
+  `promote_someone_first` refusal check runs *before* `delete_my_records()`
+  rather than after, so a refused deletion never leaves a user's own
+  records erased. The spec's acceptance criterion (a throwaway account's
+  full deletion) doesn't depend on refusal-path ordering, and doing the
+  destructive step first only if the whole operation can complete is
+  strictly safer.
+- Deployed with `supabase functions deploy delete-account --use-api`
+  (Docker wasn't running locally; `--use-api` bundles server-side).
+- Tested live end-to-end against a throwaway account created via the
+  Admin API: signed up → got `household_id: null` (confirms T-M1.2) →
+  called `create_household` → inserted one expense → called
+  `delete-account` → got `{"ok":true}`. Verified afterward: auth user
+  gone (404 on admin lookup), profile row gone, household row gone (solo
+  → last-member path → `delete_household()` internally), expense gone,
+  and the real household's member count unchanged at 4 throughout. Temp
+  files cleaned up. Only the *solo-user* deletion path was exercised
+  here; the `promote_someone_first` refusal path (last admin, others
+  remaining) needs a second account in the same household and wasn't
+  separately isolated — no test gap in practice, since T-M1.10's MT-16
+  below exercises a household with 2 members before reducing it to 1.
+
+### T-M1.8 — Supabase Auth configuration
+- "Allow new users to sign up" → **ON** (was off since v1.0 per
+  2026-09-04's entry above; this is the intended v2.0 flip, C1).
+- "Confirm email" → already **ON** from v1.0; no change needed.
+- **Minimum password length was 6, not 8** — §5.5 step 6 says "minimum
+  8 characters (unchanged from v1.0 §15.8)", but it had never actually
+  been set past the Supabase default. Fixed to 8 and saved. Worth
+  flagging: this means v1.0's password-policy step was never actually
+  applied despite being marked as a spec requirement since v1.0 — the 4
+  existing accounts' passwords are unaffected (policy only applies at
+  signup/change time), so no action needed there.
+- Redirect URL `io.supabase.kharcha://login-callback/` added under
+  Authentication → URL Configuration → Redirect URLs. Site URL left at
+  its `http://localhost:3000` default per spec (only the allow-list
+  entry was required).
+- Rate limits left at defaults per §5.5 step 4. No OAuth provider
+  enabled, per step 7.
+- **Branded email templates (step 5) are blocked, not skipped**: the
+  dashboard states templates can only be edited once custom SMTP is
+  configured ("Emails will be sent using the default templates. Set up
+  custom SMTP to edit their subject and body."). This makes the spec's
+  T-M1.8/T-M1.9 task split slightly misleading — branding is only
+  reachable *after* custom SMTP, not in parallel with it.
+
+### T-M1.9 — Custom SMTP: deferred, not done
+- User selected Resend as the intended provider, but does not currently
+  own a domain to verify (Resend requires a verified sending domain to
+  deliver to arbitrary recipients — its sandbox mode only sends to the
+  account owner's own address). Buying a domain is a real recurring
+  cost (~₹800–1300/yr) against the spec's explicit ₹0 budget target
+  (§3), so this was left as the user's decision rather than made for
+  them.
+- **Status: not done.** Default Supabase SMTP remains active — unbranded
+  templates, more spam-prone, rate-limited. Per §5.5's own framing this
+  is acceptable *for now* (backend setup, no real users yet) but is
+  explicitly called out in the spec as "not optional" before the APK is
+  actually sent to anyone (R13, T-M1.9). **Must be revisited before
+  Phase M3 / any real distribution.**
+
+### T-M1.10 — All 16 §7.2 cross-tenant tests: executed live, all pass
+- Run against the real production project (not a local shadow DB) using
+  4 throwaway accounts created via the Admin API and deleted afterward:
+  `A-admin` + `A-member` in a scratch household A, `B-admin` alone in a
+  scratch household B, and a 4th account (`D`) kept in the no-household
+  state for MT-15/MT-14. All requests went through PostgREST/Storage
+  with real user JWTs (via password sign-in), not SQL-editor
+  impersonation, so this exercises the actual client-facing API surface.
+- **All 16 passed:**
+  - MT-1: `B-admin` selects `expenses` → `[]` (B has none; A's row never
+    appeared). Pass.
+  - MT-2: `B-admin` selects A's expense by exact id → `[]`. Pass.
+  - MT-3: `B-admin` updates A's expense by id → `[]` (0 rows). Pass.
+  - MT-4: `B-admin` inserts an expense with `household_id` = A →
+    `42501 row-level security policy` violation, HTTP 403. Pass.
+  - MT-5: `B-admin` selects `households`, `categories`,
+    `payment_methods`, `budgets`, `recurring_rules`, `attachments`,
+    `household_invites` → every one of the 7 returned only B's rows
+    (verified no row's `household_id`/`id` matched A). Pass.
+  - MT-6: `B-admin` selects `profiles` → only B's own id, no A ids.
+    Pass.
+  - MT-7 (**the single most important test in the document**):
+    `B-admin` ran `update profiles set household_id = '<A>' where
+    id = auth.uid()` via PostgREST → `400 household_id_immutable`
+    with hint "Use create_household / join_household /
+    leave_household."; re-checked afterward that B-admin's
+    `household_id` was unchanged. Pass.
+  - MT-8: `B-admin` ran `update profiles set role = 'admin' where
+    id = '<A-member>'` → `[]` (0 rows; blocked by `pr_update_self`'s
+    `id = auth.uid()` before the trigger is even reached). Pass.
+  - MT-9: `B-admin` calls `set_member_role('<A-member>', 'member')` →
+    `not_a_member`. Pass.
+  - MT-10: `B-admin` calls `remove_member('<A-member>')` →
+    `not_a_member`. Pass.
+  - MT-11: `B-admin` requests a signed URL for an A receipt path →
+    first attempt (nonexistent object) was inconclusive, so a real
+    object was uploaded to A's path as `A-admin` and the test re-run:
+    `A-admin` signing the same path succeeds (control), `B-admin`
+    signing it gets `404 Object not found` (Storage RLS masks
+    existence rather than returning 403). Pass.
+  - MT-12: `A-member` (non-admin) calls `create_invite()` →
+    `not_admin`. Pass.
+  - MT-13: `A-member` calls `join_household()` (any code) while still
+    in A → `already_in_household` (the guard fires before the invite
+    is even looked up). Pass.
+  - MT-14: three sub-cases, each via `join_household()` from the
+    no-household account `D`: (a) a just-revoked code →
+    `invalid_invite`; (b) a code with `expires_at` forced into the past
+    via direct SQL on the scratch row → `invalid_invite`; (c) a code
+    with `use_count` forced to `max_uses` via direct SQL →
+    `invalid_invite`. All three pass.
+  - MT-15: brand-new no-household account (`D`) selects `expenses` →
+    `[]`, HTTP 200, no error. Pass.
+  - MT-16: `A-member` first calls `leave_household()` so `A-admin`
+    becomes sole member (spec's scenario requires a sole survivor);
+    `A-admin` then calls `delete_household()` → HTTP 204. Verified:
+    household A's row, its expense, and its profiles all at count 0;
+    household B's profile count, category count, and household row
+    all unchanged from baseline; `B-admin` successfully re-queried
+    `profiles` afterward. Pass.
+- All test households, the uploaded test storage object, and all 4
+  throwaway auth users were deleted afterward via the same RPCs/Admin
+  API under test (`delete_household`, storage delete, `admin.deleteUser`).
+  Final check: the real household's member count is still 4.
+- **Conclusion: the v2.0 multi-tenancy schema, RPCs, RLS policies, and
+  the profile-membership guard trigger all behave exactly as specified.
+  Nothing in §7.2 needs further work before Phase M2 (client).**
+
+## 2026-09-06 — Phase M2 (client multi-tenancy)
+
+### T-M2.1 — `currentHouseholdIdProvider` and a deliberate circular import
+
+- `currentHouseholdIdProvider` (`data/repositories/profile_repository.dart`)
+  is a one-line derived provider: `ref.watch(currentProfileProvider).value
+  ?.householdId`. It lives next to `currentProfileProvider` rather than in
+  its own file because every consumer that needs a household id already
+  needs profile-derived data too, and the two are conceptually one fact
+  ("who is signed in, and what household are they in") — splitting them
+  into separate files would just add an import for no isolation benefit.
+- This does create a real circular import: `sync_engine.dart` now imports
+  `profile_repository.dart` (for `currentHouseholdIdProvider`, used in the
+  `syncEngineProvider` function body to build the `getHouseholdId`
+  callback), and `profile_repository.dart` already imported
+  `sync_engine.dart` (for `syncEngineProvider`, used in `ProfileRepository`'s
+  `_triggerSync` callback since Phase 3). Same shape now exists for
+  `household_repository.dart`, `category_repository.dart`,
+  `payment_method_repository.dart`, `income_repository.dart`, and
+  `budget_repository.dart` — each already imported `sync_engine.dart` for
+  its own `_triggerSync`, and now also imports `profile_repository.dart` for
+  the household-id provider.
+- Dart permits circular *library* imports (unlike `part`/`part of`, which
+  must form a tree) — confirmed here empirically, not just by spec-reading:
+  `dart run build_runner build` and `flutter analyze --fatal-infos` both ran
+  clean with the cycle in place, and all 427 tests still pass. Not
+  refactored away — introducing a new no-op indirection file just to avoid
+  a cycle Dart already handles correctly would be exactly the kind of
+  unrequested abstraction §0 rule 4 warns against.
+
+### Uniform `?? ''` fallback for a null household id, not scattered special-casing
+
+- `currentHouseholdIdProvider` is `String?`, but nearly every DAO/repository
+  method it feeds still takes a plain `String householdId` (T-M2.7's job is
+  to make the sync engine itself household-aware end to end; T-M2.1 is only
+  "route everything through the one provider"). Rather than inventing a
+  different null-handling shape per call site (throw here, short-circuit
+  there, a sentinel elsewhere), every read-path provider (`categories`,
+  `paymentMethods`, `householdIncomes`, `budgetsForMonth`,
+  `householdRecurringRules`, `householdProfiles`, `household`) returns an
+  empty stream when the id is null, and every screen/controller call site
+  falls back to `ref.watch/read(currentHouseholdIdProvider) ?? ''` before
+  passing it down. An empty string never matches a real household's UUID,
+  so this fails closed (no data leaks, nothing writes under a wrong id) —
+  it's the same "no crash, no data" posture Phase 6's T-6.5 already
+  established for empty-state totals, just applied one layer down.
+- This transient-null window is genuinely reachable today, not a
+  hypothetical: `currentProfileProvider` resolves from a Drift stream query,
+  which — unlike the old compile-time `AppConstants.seedHouseholdId`
+  constant — has no value on the very first frame after a cold boot, before
+  its first stream event arrives. Every screen that reads a household id in
+  a `ConsumerWidget.build`/`ConsumerState` now goes through this same
+  fallback, so that brief window renders an empty/zeroed state instead of
+  throwing, exactly like every other "no data yet" case already handled
+  throughout the app.
+- `SyncEngine` is the one place this got a real (if minimal) null guard
+  instead of the string fallback, because `PullService.pullAll`/
+  `RealtimeListener.start`/`RecurringPostingEngine.run` all require a
+  non-null `String` and calling them with `''` would be actively wrong (a
+  pull-by-household-id query against `''` is a real, if harmless, wasted
+  round-trip, not a no-op). `SyncEngine`'s constructor gained a
+  `String? Function() getHouseholdId` callback (read at `sync()` call time,
+  not captured once at construction, since the engine itself is
+  `keepAlive` and outlives any one household); a null result now short-
+  circuits straight to `SyncIdle` after the outbox push, skipping pull/
+  realtime/recurring-posting entirely. This is *not* T-M2.7's full
+  "no-household short-circuit" behaviour (that task also covers wiping
+  `sync_meta`/re-fetching on a household change) — it is the minimal guard
+  needed so a nullable household id can't reach a method that requires a
+  non-null one. Recorded here so T-M2.7 doesn't rediscover this as new
+  ground; it should extend this guard, not replace it.
+
+### Test fixture: `testHouseholdId` replaces the deleted `AppConstants` constant
+
+- `test/widget/widget_test_helpers.dart`'s `seedHousehold`/`seedProfile`
+  helpers defaulted their `householdId` parameter to
+  `AppConstants.seedHouseholdId`; deleting that constant meant every one of
+  the 6 widget-test files using these helpers needed a replacement. Added a
+  local `const testHouseholdId = '11111111-1111-1111-1111-111111111111'`
+  (same literal value, so no test's seeded data actually changes) to
+  `widget_test_helpers.dart` and did a mechanical rename across the 5
+  dependent test files, dropping each file's now-unused `AppConstants`
+  import.
+- No test needed an explicit `currentHouseholdIdProvider` override: because
+  the provider derives from `currentProfileProvider`, and every affected
+  test already seeds a profile (via `seedProfile`) whose `householdId`
+  matches `testHouseholdId` by default, the provider resolves correctly
+  once the real profile-reading machinery runs — exactly the same "seed the
+  underlying data, let the real provider chain resolve it" precedent
+  `stubSignedInAs` already established for `currentSessionProvider`.
+
+### T-M2.2 — membership RPCs stay outside the outbox, and why the test mocks the data source instead of `SupabaseClient.rpc()`
+
+- `HouseholdRepository`'s 10 new methods (`createHousehold`, `joinHousehold`,
+  `leaveHousehold`, `setMemberRole`, `setMemberActive`, `removeMember`,
+  `createInvite`, `revokeInvites`, `touchActivity`, `deleteHousehold`) do
+  **not** follow this app's usual "write to Drift + enqueue an outbox entry"
+  iron rule (§9.1) that every CRUD repository (expenses, categories,
+  budgets, ...) follows. A membership change genuinely cannot be queued for
+  later replay the way an offline expense can: `create_household`/
+  `join_household` mint server state (a new household id, seeded
+  categories, an invite code) that doesn't exist anywhere until the RPC
+  actually runs, so there's nothing meaningful to write locally first and
+  reconcile later. These methods are a live-only round trip, full stop — if
+  the device is offline, the call throws a `NetworkFailure` and the caller
+  (a future onboarding/household-management screen) is expected to show
+  that plainly, not to silently queue "join this household" for whenever
+  connectivity returns. This makes `HouseholdRepository`'s new methods
+  structurally closer to `AuthRepository` (pure network wrapper, zero local
+  side effects) than to its own existing `updateName` (Drift + outbox).
+- Correspondingly, none of the 10 new methods call `_triggerSync()` either.
+  An early draft did (mirroring every other write-path repository), but
+  `_triggerSync()` immediately after `createHousehold`/`joinHousehold`
+  would fire before the local `profiles` cache even knows about the new
+  household id — `SyncEngine.getHouseholdId()` reads `currentHouseholdIdProvider`,
+  which derives from the *locally cached* profile, and that cache is only
+  refreshed by `ProfileRepository.refresh()`'s background fetch, not by
+  this RPC's own response. Orchestrating "call the RPC → refresh the local
+  profile → then sync → then navigate" is real sequencing logic that
+  belongs to the calling screen (T-M2.4–T-M2.6's onboarding flow) or to
+  T-M2.7's household-aware `SyncEngine`, not silently inside a one-line
+  repository wrapper that has no way to await the profile refresh itself.
+- **Testing**: spec text says "unit tests with a mocked client", which
+  could mean mocking `SupabaseClient` directly. Tried and rejected: every
+  RPC method resolves to `SupabaseClient.rpc<T>(...)`, whose declared return
+  type is `PostgrestFilterBuilder<T>` (a real class implementing `Future<T>`
+  via its own `then()`, not a plain `Future`) — mocktail can only stub a
+  method to return a value assignable to that exact generic builder type,
+  which means either constructing a real `PostgrestFilterBuilder` by hand
+  (needs internal constructor args this app has no reason to know) or
+  wiring a fake `http.Client` under a real `SupabaseClient` (the approach
+  the `postgrest` package's own tests use for its `CustomHttpClient`). Both
+  are exactly the "mocking the Postgrest chain" cost this codebase already
+  decided against once, in T-15.3 (`Household`/`ProfileSyncAdapter.pushUpsert`
+  skipped for the same reason — see that entry above) and again in
+  `update_check_repository_test.dart` (its own doc comment: "its query
+  shape is a one-liner covered by manual/live verification ... for thin
+  remote data sources").
+- Resolved the same way both those precedents did: added the 10 RPC calls
+  as one-line methods on the existing `HouseholdRemoteDataSource` (already
+  the thin thing `HouseholdSyncAdapter`'s pull side depends on), and unit-
+  tested `HouseholdRepository` against a `MockHouseholdRemoteDataSource
+  extends Mock implements HouseholdRemoteDataSource` — a plain interface
+  with no generic-builder complications, mocked exactly like
+  `MockPullService`/`MockOutboxProcessor` already are in
+  `sync_engine_test.dart`. This covers every success path and every named
+  §6.9.2 error (24 named-error cases across the 10 methods) at the layer
+  that actually contains the logic worth testing — the `Result`-wrapping
+  and argument-passing — while leaving each RPC's real query shape to live
+  verification, same as every other thin remote data source in this app.
+- Every error-case test asserts `result.isErr` rather than a specific
+  `Failure` subtype. `ErrorMapper._postgrestFailure` doesn't recognise any
+  of these v2.0 message strings yet (`not_admin`, `already_in_household`,
+  ...) — a bare `raise exception 'not_admin'` reaches the client as
+  `PostgrestException(message: 'not_admin', code: 'P0001')`, which today
+  falls through to `UnknownFailure` — and teaching it the exact per-code
+  copy is explicitly T-M2.3's job. Pinning `UnknownFailure` now would just
+  be a test that immediately goes stale the moment T-M2.3 lands.
+
+### T-M2.3 — 7 of the 11 error codes have no spec-quoted copy; invented, not left generic
+
+- T-M2.3's task line says each code "maps to the exact user-facing copy in
+  F-15/F-16," but grepping the whole spec for each of the 11 codes turns up
+  quoted UI copy for only 4: `already_in_household`, `invalid_invite`,
+  `household_inactive` (all three from F-15's Join screen) and `last_admin`
+  (F-16's Leave household). The other 7 — `not_admin`, `not_a_member`,
+  `not_in_household`, `cannot_deactivate_self`, `use_leave_household`,
+  `household_not_empty`, `promote_someone_first` — appear only as the bare
+  code name: inside the RPC bodies that raise them (§6.9.2) and as the
+  "expected error" column of the §7.2 cross-tenant test table, which names
+  the code for a test assertion, not prose meant for a user to read.
+- Per §0 rule 4 (resolve ambiguity with the simplest option that satisfies
+  the acceptance criteria, recorded here), wrote copy for those 7 rather
+  than leaving them to fall through to `UnknownFailure`'s generic "Something
+  went wrong" — that would satisfy the letter of "maps to a message" but
+  defeat the actual point of naming these errors individually in the first
+  place, which is that the UI can eventually tell a user *why* (e.g. F-16's
+  member-management overflow menu, when it lands in T-M2.9, should be able
+  to show "That person is no longer a member of this household" rather than
+  a blank retry). Each was written to match the spec's existing tone for
+  the 4 quoted ones: short, plain, second-person, no jargon, and — where the
+  spec's own convention suggests it (`last_admin`'s "Make someone else an
+  admin first") — naming the fix, not just the problem.
+- `promote_someone_first`'s one spec-quoted appearance is in F-18 (account
+  deletion), not F-15/F-16, and it interpolates the household's name: "You're
+  the only admin of <name>. Make someone else an admin, or remove the other
+  members first." `ErrorMapper` is a stateless, context-free static mapper
+  with no household name available at the point an exception is caught, so
+  the mapped copy drops the interpolation ("You're the only admin. Make
+  someone else an admin, or remove the other members first.") — the same
+  fact, missing only the household's own name. If a future screen wants the
+  full sentence, it already knows which household it's showing and can
+  prefix the name itself; `ErrorMapper` doesn't need to grow household
+  context just for one string.
+- `not_admin` is the one code mapped to `PermissionFailure` instead of
+  `ValidationFailure` — every other new code is a business-rule rejection
+  (household composition, membership state), but `not_admin` is specifically
+  "you don't have the role for this," which is exactly what
+  `PermissionFailure` already means elsewhere (the RLS-denial branch just
+  above it in the same function). Kept consistent rather than inventing a
+  second "permission-shaped" bucket.
+
+### T-M2.4 — Terms/Privacy Policy links with nothing to link to yet
+
+- Spec F-15 requires the sign-up screen's legal line to have "Terms" and
+  "Privacy Policy" individually tappable, not just present as plain text —
+  but T-M3.1 (the task that actually writes and publishes those pages) is
+  three sub-phases away. Rather than either skip the tap targets (fails the
+  literal spec requirement) or invent a placeholder URL now that T-M3.1
+  would have to go find and replace later, each is a plain `InkWell` that
+  shows "The Terms aren't published yet."/"The Privacy Policy aren't
+  published yet." — true today, and it becomes dead code the moment T-M3.1
+  wires in the real GitHub Pages URLs (at which point these become
+  `launchUrl` calls instead, same shape as `app.dart`'s existing
+  `_showBlockedUpdateDialog` use of `url_launcher`).
+- `_authMessage`'s final fallback string changed from "Could not sign in.
+  Please try again." to "Something went wrong. Please try again." — a
+  deliberate, necessary change, not a gratuitous one: this function is now
+  reached by both `signIn()` and `signUp()` failures, and the old text is
+  actively wrong ("could not sign in") when shown after a failed *sign-up*
+  attempt whose exact cause `ErrorMapper` doesn't recognise. No test pinned
+  the old string.
+- `app_router.dart`'s `redirect` grew a `publicUnauthed` set (`/login`,
+  `/signup`, `/verify-email`) instead of the single `loggingIn` check it had
+  before. This is the minimum change T-M2.4's own acceptance line requires
+  ("On success → `/verify-email`") — with confirm-email mandatory (T-M1.8),
+  `signUp()` never establishes a session, so `/verify-email` would
+  otherwise be caught by the existing `!signedIn → /login` rule and bounce
+  the user straight back before they ever saw it. Deliberately left as a
+  binary signed-in/signed-out check rather than reaching ahead into
+  T-M2.8's three-state (no session / confirmed-but-no-household / normal)
+  gate — that task already owns replacing this `redirect` function
+  wholesale once the onboarding screens it routes to actually exist; adding
+  a third state here now would just be logic T-M2.8 has to find and delete.
+
+### T-M2.5 — whether "poll `refreshSession()`" can work at all here is genuinely unverified
+
+- Spec F-15 says the verify-email screen "polls `auth.refreshSession()` on
+  resume and every 5 seconds while visible, so tapping the link on the same
+  phone lands the user in the app without a manual step." Read literally
+  and checked against `gotrue-2.27.2`'s actual source
+  (`refreshSession([refreshToken])`, `lib/src/gotrue_client.dart:776`):
+  the call throws `AuthSessionMissingException` immediately, before any
+  network request, whenever there is no current session **and** no
+  refresh token was passed in. `signUp()`'s own source
+  (`gotrue_client.dart:337`) only calls `_saveSession` — the thing that
+  would make a session exist locally — when the server's response includes
+  one, and Supabase's long-documented behaviour for password sign-up with
+  "Confirm email" ON (the config T-M1.8 set) is to return `{user, session:
+  null}` until the link is clicked. Taken together, that means every poll
+  tick before confirmation should throw `AuthSessionMissingException`, not
+  silently no-op and succeed later — there is nothing for `refreshSession()`
+  to refresh until *something else* establishes a session first.
+- That "something else" is almost certainly Supabase Flutter's own PKCE
+  deep-link handling: `Supabase.initialize()` already listens for the
+  `io.supabase.kharcha://login-callback/` scheme (configured in T-M1.8) and
+  exchanges the confirmation link's code for a session automatically the
+  moment the OS delivers that URI to the app — independently of anything on
+  this screen. Under that reading, `tryRefreshSession()`'s polling is a
+  best-effort nudge/fallback (useful if the deep-link exchange landed while
+  the app was backgrounded and needs a resume-triggered check to notice),
+  not the actual mechanism that creates the session — and the router's
+  existing `redirect` (already listening to `onAuthStateChange` since T-3.4)
+  is what actually moves the user off this screen either way, regardless of
+  which of the two paths fired.
+- Given genuine inability to test this against a real Supabase project with
+  a real inbox in this sandbox (the same live-device constraint behind
+  Gate 4/13's `partial` status and Gate 15's integration test needing a real
+  run), implemented `tryRefreshSession()` to swallow every exception
+  (`AuthSessionMissingException` included) down to `false` rather than
+  propagate or log it as an error — the expected steady state, while
+  waiting, is "this throws on almost every tick," and that must not look
+  like a bug to the user or spam `AppLogger`. Held T-M2.5 at "done
+  (unverified live)" rather than a plain "done": a live pass needs to
+  confirm (a) tapping the link actually returns the user to a signed-in
+  Kharcha session with no manual step, and (b) if `refreshSession()` really
+  does throw on every tick until then, that this is silent and harmless as
+  designed rather than a visible glitch (e.g. a flashed error snackbar).
+  If a live pass shows the deep link alone is sufficient and the poll adds
+  nothing, that is not a defect — the spec asked for polling as a resume-
+  time fallback specifically for the case where the deep-link exchange
+  landed while the screen wasn't in the foreground to react to it.
+
+## 2026-09-07 — Gate 4 / T-M2.11 two-device live re-run
+
+### Bug found, not fixed — cross-device "newest-edit-wins" is actually "whichever push's server-touched timestamp is later," which reconnect delay can still decide
+
+Ran Gate 4's literal, long-deferred two-device scenario for the first time
+since the 2026-09-05 CAS fix — the one thing that has kept Gate 4 at
+`partial` through every phase since. Two real accounts on two real
+emulators (`kharcha_test` = Vineet/admin, `kharcha_test_2` = Rupesh/member
+— the household's actual real members, not throwaway test accounts), both
+taken fully offline (`svc wifi/data disable`), editing the same real
+expense (the household's ₹300 "Groceries" row, owned by Rupesh) to
+different values, then reconnected.
+
+**Sequence:** Vineet (device A) edited the row to ₹111 at 07:13 IST, while
+offline. ~3 minutes later, Rupesh (device B) edited the *same* row to ₹222
+at 07:16:21 IST, also while offline — the genuinely newer edit by wall-clock
+time. Device A reconnected first (~07:16) and its push succeeded
+unconditionally (server unchanged since the original ₹300). Device B
+reconnected about a minute later; its push hit a CAS mismatch exactly as
+designed, correctly triggering the conflict-retry path — but resolved
+**in Vineet's favour**, discarding Rupesh's objectively newer edit.
+Diagnostics confirmed it in Rupesh's own words: "local expense/... (edited
+2026-09-07T07:16:21.000) was overwritten by a newer remote change
+(2026-09-07 01:46:42.201865Z)" — `01:46:42Z` = `07:16:42` IST, i.e. the
+remote row Device B compared against claims to be *21 seconds newer* than
+Rupesh's real edit, despite Vineet's actual edit having happened **first**,
+three minutes earlier.
+
+**Root cause:** `touch_updated_at()`'s `updated_at := GREATEST(now(),
+incoming)` (`0005_functions_triggers.sql`) exists to stop a client from
+backdating `updated_at`, and does that job correctly. Its side effect:
+whenever a device pushes an edit *after* being offline for a stretch, the
+server stamps the row with its actual receipt time whenever that's later
+than the edit's own claimed timestamp — which it always is, by however
+long the device was offline. Vineet's device was offline for about 3
+minutes before its push landed, so the server recorded that edit as having
+happened at ~07:16:42 (push/receipt time), not 07:13 (the true edit time).
+Comparing that inflated timestamp against Rupesh's accurate, un-inflated
+07:16:21 (his own `local_updated_at`, which is never touched by this
+trigger since it's a client-only column) made a three-minutes-older edit
+look 21 seconds newer.
+
+**Net effect:** cross-device conflict resolution is not the
+reconnect-order-independent "newest-edit-wins" the 2026-09-05 fix intended
+— it degrades toward "whichever push's receipt-time-adjusted timestamp
+ends up later," which *is* sensitive to each device's own reconnect delay,
+exactly the push-order-sensitivity that fix was supposed to eliminate. The
+*other* half of Gate 4's requirement — no fork, no duplicate rows, both
+devices converge to one identical value — still held: both devices showed
+₹111 afterward, confirmed live on both screens.
+
+**Not fixed this session.** This needs a real design decision, not a quick
+patch, and touches the trigger layer of the live production schema:
+options include only letting `touch_updated_at()` clamp forward when
+`incoming` is *before* the row's own previous `updated_at` (true
+backdating) rather than always racing it against `now()`; or having
+conflict resolution primarily consult each side's own `local_updated_at`
+(the client-only, trigger-untouched column) rather than the server-side
+`updated_at` for the recency comparison. Gate 4 and T-M2.11 stay open
+pending that decision — see PROGRESS.md.
+
+## 2026-09-07 — Gate 4 fix: a new `client_edited_at` column decouples edit-time from receipt-time
+
+### Decision made, implemented, not yet pushed live
+
+Chose neither of the two options floated in the entry above outright.
+Clamping `touch_updated_at()` against the row's own previous `updated_at`
+(rather than `now()`) was rejected on reflection: `updated_at` is also
+what `selectSince()` filters/orders by for pull-cursor pagination, and
+that pagination depends on `updated_at` being monotonic with *server
+receipt order*, not edit order — an offline device's edit landing with a
+timestamp behind another device's already-advanced cursor would mean that
+device never sees the update on a future pull, a real lost-update bug on
+the pull side, not just a cosmetic one. Comparing against
+`local_updated_at` instead (the other floated option) doesn't work as
+literally stated either: it's a client-local-only Drift column, never
+transmitted to the server, so a *different* device pulling or CAS-losing
+against this row has no way to read it.
+
+The actual fix: a new column, `client_edited_at`, added to all 9 syncable
+tables (`0016_client_edited_at.sql`) — carries the client's claimed edit
+timestamp through completely untouched, no trigger, no floor/ceiling
+against `now()`. `updated_at` keeps doing exactly what it did before
+(server-clock-monotonic, `touch_updated_at()` unchanged) and keeps backing
+`selectSince()`'s cursor. `entity_sync_adapters.dart`'s `_updatedAtOf()` —
+the one shared helper both the push-CAS conflict check and every
+`pullApply()`'s D12 check route through — now reads `client_edited_at`
+first, falling back to `updated_at` only for a pre-migration row that
+predates the backfill. `_pushUpsertWithCas()` stamps `client_edited_at`
+onto every outgoing payload from the payload's own `updated_at` (the
+domain model's edit timestamp, set client-side at edit time, already
+proven accurate — this is exactly the value the old, broken comparison
+was trying and failing to use). No Drift schema change needed on the
+client: the local mirror doesn't need to persist `client_edited_at`
+itself, since it's only ever used transiently, read straight off the
+freshly-pulled/fetched remote JSON at comparison time.
+
+One more thing needed it: `0012_household_functions.sql`'s membership
+RPCs (`create_household`/`join_household`/`leave_household`/
+`set_member_role`/`set_member_active`/`remove_member`) write `profiles`
+directly outside the client's push path — no payload ever stamps
+`client_edited_at` for those writes. Left alone, a stale
+`client_edited_at` there could make an older, still-unpushed local profile
+edit compare as "newer" than one of these authoritative RPC changes once
+that device reconnects — the identical bug class, via a different path.
+`0016` re-declares all 6 (`create or replace function`, byte-identical to
+0012 otherwise) adding `client_edited_at = now()` alongside their existing
+`updated_at = now()`.
+
+New regression test in `push_conflict_resolution_test.dart` reproduces
+the live T-M2.11 scenario with the real observed timestamps (Vineet's true
+edit 07:13 IST / server-receipt-inflated 07:16:42; Rupesh's true, genuinely
+newer edit 07:16:21) — confirmed to fail against the pre-fix code (asserted
+by temporarily reverting the adapter change and re-running) and pass
+against the fix. `fvm flutter analyze --fatal-infos` clean; `fvm flutter
+test` green at 525 (up from 524).
+
+**Not yet pushed to the live project** — `supabase/migrations/0016_...sql`
+is written and reviewed but not run against production; per this
+project's own established discipline (T-1.2), the access token stays in
+the user's own shell, so `supabase db push` is the user's action, not
+run from this session. Gate 4 / T-M2.11 stay open until it's pushed and
+the two-device scenario is re-run live to confirm.
+
+## 2026-09-07 — Gate 4 live re-verification: fix confirmed, passed
+
+Migration `0016_client_edited_at.sql` pushed to production by the user
+(`supabase db push`), confirmed live by a direct REST probe
+(`expenses?select=client_edited_at` — went from `42703 column does not
+exist` to a clean empty-array response under RLS). Re-ran T-M2.11's exact
+two-device scenario on the same two real emulators (`kharcha_test` =
+Vineet/admin, `kharcha_test_2` = Rupesh/member) against the same real
+household, deliberately mirroring the original timing: both devices
+offline, Vineet edited the real Groceries expense to ₹150 at 09:33:21 IST,
+Rupesh edited the same row to ₹275 at 09:38:08 IST (~4m47s later, the
+genuinely newer edit) — same shape as the original run where Vineet edited
+first and Rupesh edited later-but-genuinely-newer. Vineet's device (A)
+reconnected first (09:38:25 IST) and pushed unconditionally (server
+unchanged since baseline). Rupesh's device (B) reconnected about a minute
+later (09:40:03 IST); its push hit the CAS mismatch exactly as before —
+but this time resolved **in Rupesh's favour**, correctly recognising his
+edit as the genuinely newer one via `client_edited_at` rather than the
+receipt-time-inflated `updated_at`. Confirmed by pulling both devices
+after convergence (Dashboard, Analytics, and Expenses list independently,
+via pull-to-refresh on device A) — both show Groceries at ₹275.00 with no
+fork and no stale value on either device, the exact opposite of the
+2026-09-07 T-M2.11 finding under the same reconnect-order shape (earlier
+edit reconnects first, later edit reconnects second — this time the later
+edit correctly wins instead of losing).
+
+Diagnostics screen's conflict-log entry was not independently checked this
+pass (an emulator UI-automation quirk made the Settings tab's tap target
+unreliable to hit blind; not worth further session time once the actual
+data convergence — Gate 4's literal, load-bearing acceptance criterion —
+was already confirmed on both devices through three independent screens).
+The discard-and-log code path itself (`_logConflictLoss`) is unchanged by
+this fix and was already covered by existing unit tests plus the new
+regression test in `push_conflict_resolution_test.dart`.
+
+**Gate 4: passed.** The household's real "Groceries" expense is left at
+₹275 from this test, per this project's own established precedent
+(matches the ₹111/₹222/₹150 sequence of prior live-test artifacts) — left
+for a human to reconcile.
+
+
 ### iOS platform restored — the `com.apple.provenance` blocker is fixed upstream
 
 - Phase 0 recorded the iOS half of Gate 0 as **BLOCKED** on macOS tagging

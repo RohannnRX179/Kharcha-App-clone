@@ -15,22 +15,35 @@ extension ProfileRowMapper on Profile {
     role: MemberRole.values.byName(role),
     colourHex: colourHex,
     isActive: isActive,
+    joinedAt: joinedAt?.toUtc(),
     createdAt: createdAt.toUtc(),
     updatedAt: updatedAt.toUtc(),
   );
 }
 
 extension ProfileDomainMapper on domain.Profile {
-  ProfilesCompanion toCompanion({bool dirty = false}) => ProfilesCompanion(
-    id: Value(id),
-    householdId: Value(householdId),
-    displayName: Value(displayName),
-    role: Value(role.name),
-    colourHex: Value(colourHex),
-    isActive: Value(isActive),
-    createdAt: Value(createdAt),
-    updatedAt: Value(updatedAt),
-    isDirty: Value(dirty),
-    syncStatus: Value(dirty ? 'pending' : 'synced'),
-  );
+  ProfilesCompanion toCompanion({bool dirty = false, String? baseUpdatedAt}) =>
+      ProfilesCompanion(
+        id: Value(id),
+        householdId: Value(householdId),
+        displayName: Value(displayName),
+        role: Value(role.name),
+        colourHex: Value(colourHex),
+        isActive: Value(isActive),
+        // Written unconditionally, not `Value.absent()` when null: a leave
+        // or removal genuinely resets this to null server-side
+        // (`leave_household`/`remove_member`), and that transition must
+        // overwrite a stale non-null local value, not be skipped.
+        joinedAt: Value(joinedAt),
+        createdAt: Value(createdAt),
+        updatedAt: Value(updatedAt),
+        isDirty: Value(dirty),
+        localUpdatedAt: dirty
+            ? Value(DateTime.now().toUtc())
+            : const Value.absent(),
+        syncStatus: Value(dirty ? 'pending' : 'synced'),
+        baseUpdatedAt: baseUpdatedAt == null
+            ? const Value.absent()
+            : Value(baseUpdatedAt),
+      );
 }

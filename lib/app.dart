@@ -3,12 +3,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'core/constants/app_constants.dart';
 import 'core/notifications/notification_service.dart';
 import 'data/remote/supabase_client_provider.dart';
 import 'data/repositories/budget_alert_service.dart';
 import 'data/repositories/notification_scheduler.dart';
+import 'data/repositories/profile_repository.dart';
+import 'data/repositories/update_check_repository.dart';
 import 'data/sync/sync_engine.dart';
 import 'routing/app_router.dart';
 import 'routing/root_navigator_key.dart';
@@ -48,10 +51,17 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
 
     // T-13.2: recurring notifications are re-armed on every app start,
     // since Android clears alarms on reboot and this app has no background
-    // execution to re-arm them any other way.
-    ref
-        .read(notificationSchedulerProvider)
-        .runAll(AppConstants.seedHouseholdId);
+    // execution to re-arm them any other way. No-op while there's no
+    // resolved household yet (signed out, or — from Phase M2 — not yet
+    // joined/created one).
+    final bootHouseholdId = ref.read(currentHouseholdIdProvider);
+    if (bootHouseholdId != null) {
+      ref.read(notificationSchedulerProvider).runAll(bootHouseholdId);
+    }
+
+    // T-14.6: at most once per 24h (the repository's own throttle) — see
+    // `UpdateCheckRepository.checkForUpdates`.
+    ref.read(updateCheckControllerProvider.notifier).check();
 
     // T-13.4: deep-link a tapped notification into its target route. A
     // foreground tap arrives on this stream; a cold-start tap (the
@@ -92,10 +102,41 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
     // Budget alerts and the rest of the notification types are evaluated on
     // every resume regardless of the sync throttle above (spec §11.7/
     // §11.12) — both are local reads, not network calls.
-    ref.read(budgetAlertServiceProvider).evaluate(AppConstants.seedHouseholdId);
-    ref
-        .read(notificationSchedulerProvider)
-        .runAll(AppConstants.seedHouseholdId);
+    final resumeHouseholdId = ref.read(currentHouseholdIdProvider);
+    if (resumeHouseholdId != null) {
+      ref.read(budgetAlertServiceProvider).evaluate(resumeHouseholdId);
+      ref.read(notificationSchedulerProvider).runAll(resumeHouseholdId);
+    }
+    ref.read(updateCheckControllerProvider.notifier).check();
+  }
+
+  Future<void> _showBlockedUpdateDialog(Blocked blocked) {
+    final context = rootNavigatorKey.currentContext;
+    if (context == null) return Future.value();
+    return showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('Update required'),
+          content: const Text(
+            'This version is too old to sync safely. Please update.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: blocked.release.downloadUrl == null
+                  ? null
+                  : () => launchUrl(
+                      Uri.parse(blocked.release.downloadUrl!),
+                      mode: LaunchMode.externalApplication,
+                    ),
+              child: const Text('Get it'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -106,6 +147,13 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
       if (previous == null && next != null) {
         ref.read(syncEngineProvider).sync();
       }
+    });
+
+    // T-14.6: `min_supported > current build` is the emergency brake — a
+    // non-dismissible dialog, unlike the ordinary UpdateAvailable banner
+    // (rendered on the Dashboard itself, see `update_banner.dart`).
+    ref.listen(updateCheckControllerProvider, (previous, next) {
+      if (next is Blocked) _showBlockedUpdateDialog(next);
     });
 
     final router = ref.watch(appRouterProvider);

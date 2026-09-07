@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/category_visuals.dart';
 import '../../../core/errors/failure.dart';
 import '../../../core/result/result.dart';
@@ -88,6 +87,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   Future<void> _export() async {
     setState(() => _busy = true);
     final repo = ref.read(exportRepositoryProvider);
+    final householdId = ref.read(currentHouseholdIdProvider) ?? '';
     final start = _startDate;
     final end = _endDate;
     final files = <File>[];
@@ -105,7 +105,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     if (_format == _ExportFormat.csv) {
       collect(
         await repo.exportExpensesCsv(
-          householdId: AppConstants.seedHouseholdId,
+          householdId: householdId,
           startDate: start,
           endDate: end,
           memberIds: _memberIds.toList(),
@@ -115,7 +115,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       if (_includeIncome && failure == null) {
         collect(
           await repo.exportIncomeCsv(
-            householdId: AppConstants.seedHouseholdId,
+            householdId: householdId,
             startDate: start,
             endDate: end,
             memberIds: _memberIds.toList(),
@@ -126,7 +126,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     } else {
       collect(
         await repo.exportPdfReport(
-          householdId: AppConstants.seedHouseholdId,
+          householdId: householdId,
           startDate: start,
           endDate: end,
           memberIds: _memberIds.toList(),
@@ -139,9 +139,8 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     if (!mounted) return;
     setState(() => _busy = false);
     if (failure != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(failure!.message)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(failure!.message)));
       return;
     }
     await SharePlus.instance.share(
@@ -151,9 +150,10 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
   Future<void> _exportFullBackup() async {
     setState(() => _busy = true);
+    final householdId = ref.read(currentHouseholdIdProvider) ?? '';
     final result = await ref
         .read(exportRepositoryProvider)
-        .exportFullBackupJson(householdId: AppConstants.seedHouseholdId);
+        .exportFullBackupJson(householdId: householdId);
     if (!mounted) return;
     setState(() => _busy = false);
     final file = result.valueOrNull;
@@ -161,9 +161,9 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       await SharePlus.instance.share(ShareParams(files: [XFile(file.path)]));
     } else {
       final failure = result.failureOrNull;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(failure?.message ?? 'Something went wrong.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(failure?.message ?? 'Something went wrong.')),
+      );
     }
   }
 
@@ -226,10 +226,7 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
                 ],
               ),
               const SizedBox(height: 4),
-              Text(
-                _rangeLabel,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
+              Text(_rangeLabel, style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 20),
               if (profiles.isNotEmpty) ...[
                 Text('Members', style: Theme.of(context).textTheme.labelLarge),
@@ -280,7 +277,10 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
               SegmentedButton<_ExportFormat>(
                 segments: const [
                   ButtonSegment(value: _ExportFormat.csv, label: Text('CSV')),
-                  ButtonSegment(value: _ExportFormat.pdf, label: Text('PDF report')),
+                  ButtonSegment(
+                    value: _ExportFormat.pdf,
+                    label: Text('PDF report'),
+                  ),
                 ],
                 selected: {_format},
                 onSelectionChanged: (s) => setState(() => _format = s.first),

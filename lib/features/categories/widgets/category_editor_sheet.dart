@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/category_visuals.dart';
+import '../../../core/widgets/colour_swatch_picker.dart';
 import '../../../data/repositories/category_repository.dart';
+import '../../../data/repositories/profile_repository.dart';
 import '../../../domain/models/category.dart' as domain;
 import '../../../domain/models/enums.dart';
 
@@ -37,7 +38,8 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
   );
   late CategoryKind _kind = widget.existing?.kind ?? CategoryKind.expense;
   late String _iconKey = widget.existing?.iconKey ?? 'category';
-  late String _colourHex = widget.existing?.colourHex ?? categoryColourPalette.last;
+  late String _colourHex =
+      widget.existing?.colourHex ?? categoryColourPalette.last;
   bool _saving = false;
   String? _error;
 
@@ -60,7 +62,7 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
     final repo = ref.read(categoryRepositoryProvider);
     if (widget.existing == null) {
       await repo.create(
-        householdId: AppConstants.seedHouseholdId,
+        householdId: ref.read(currentHouseholdIdProvider) ?? '',
         name: name,
         kind: _kind,
         iconKey: _iconKey,
@@ -101,10 +103,7 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
             TextField(
               controller: _nameController,
               autofocus: !isEdit,
-              decoration: InputDecoration(
-                labelText: 'Name',
-                errorText: _error,
-              ),
+              decoration: InputDecoration(labelText: 'Name', errorText: _error),
               maxLength: 40,
             ),
             const SizedBox(height: 8),
@@ -148,17 +147,9 @@ class _CategoryEditorSheetState extends ConsumerState<_CategoryEditorSheet> {
             const SizedBox(height: 16),
             Text('Colour', style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final hex in categoryColourPalette)
-                  _ColourChoice(
-                    hex: hex,
-                    selected: hex == _colourHex,
-                    onTap: () => setState(() => _colourHex = hex),
-                  ),
-              ],
+            ColourSwatchPicker(
+              selectedHex: _colourHex,
+              onSelected: (hex) => setState(() => _colourHex = hex),
             ),
             const SizedBox(height: 24),
             FilledButton(
@@ -201,44 +192,6 @@ class _IconChoice extends StatelessWidget {
         backgroundColor: selected ? colour : colour.withValues(alpha: 0.15),
         foregroundColor: selected ? Colors.white : colour,
         child: Icon(icon),
-      ),
-    );
-  }
-}
-
-class _ColourChoice extends StatelessWidget {
-  const _ColourChoice({
-    required this.hex,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String hex;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colour = colourFromHex(hex);
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: colour,
-          shape: BoxShape.circle,
-          border: selected
-              ? Border.all(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  width: 2,
-                )
-              : null,
-        ),
-        child: selected
-            ? const Icon(Icons.check, color: Colors.white, size: 18)
-            : null,
       ),
     );
   }

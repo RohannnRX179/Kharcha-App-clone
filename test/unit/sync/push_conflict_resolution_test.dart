@@ -70,26 +70,30 @@ void main() {
   const userId = 'user1';
   const expenseId = 'exp1';
 
-  Map<String, dynamic> payloadFor(DateTime updatedAt, {String note = 'edit'}) =>
-      {
-        'id': expenseId,
-        'household_id': householdId,
-        'user_id': userId,
-        'amount_paise': 5000,
-        'category_id': null,
-        'payment_method_id': null,
-        'spent_at': updatedAt.toIso8601String(),
-        'spent_on': updatedAt.toIso8601String(),
-        'note': note,
-        'merchant': '',
-        'has_receipt': false,
-        'recurring_rule_id': null,
-        'occurrence_date': null,
-        'created_by_device': null,
-        'created_at': updatedAt.toIso8601String(),
-        'updated_at': updatedAt.toIso8601String(),
-        'deleted_at': null,
-      };
+  Map<String, dynamic> payloadFor(
+    DateTime updatedAt, {
+    String note = 'edit',
+    DateTime? clientEditedAt,
+  }) => {
+    'id': expenseId,
+    'household_id': householdId,
+    'user_id': userId,
+    'amount_paise': 5000,
+    'category_id': null,
+    'payment_method_id': null,
+    'spent_at': updatedAt.toIso8601String(),
+    'spent_on': updatedAt.toIso8601String(),
+    'note': note,
+    'merchant': '',
+    'has_receipt': false,
+    'recurring_rule_id': null,
+    'occurrence_date': null,
+    'created_by_device': null,
+    'created_at': updatedAt.toIso8601String(),
+    'updated_at': updatedAt.toIso8601String(),
+    'client_edited_at': (clientEditedAt ?? updatedAt).toIso8601String(),
+    'deleted_at': null,
+  };
 
   Future<void> insertLocal({
     required DateTime updatedAt,
@@ -209,37 +213,77 @@ void main() {
     expect(AppLogger.instance.recentEntries, isEmpty);
   });
 
-  test(
-    'a dirty row with no local_updated_at (a pre-Gate-10-fix row, or any '
-    'future write path that forgets to stamp it) does not crash on a CAS '
-    'conflict — it logs with an "unknown time" placeholder and still '
-    'resolves by adopting the remote row',
-    () async {
-      final base = DateTime.utc(2026, 1, 1);
-      final remoteEditedAt = DateTime.utc(2026, 1, 3);
-      await insertLocal(
-        updatedAt: base,
-        baseUpdatedAt: base.toIso8601String(),
-        dirty: true,
-        localUpdatedAt: null,
-        note: 'local note',
-      );
-      remote.casResult = null;
-      remote.serverRow = payloadFor(remoteEditedAt, note: 'remote note');
+  test('a dirty row with no local_updated_at (a pre-Gate-10-fix row, or any '
+      'future write path that forgets to stamp it) does not crash on a CAS '
+      'conflict — it logs with an "unknown time" placeholder and still '
+      'resolves by adopting the remote row', () async {
+    final base = DateTime.utc(2026, 1, 1);
+    final remoteEditedAt = DateTime.utc(2026, 1, 3);
+    await insertLocal(
+      updatedAt: base,
+      baseUpdatedAt: base.toIso8601String(),
+      dirty: true,
+      localUpdatedAt: null,
+      note: 'local note',
+    );
+    remote.casResult = null;
+    remote.serverRow = payloadFor(remoteEditedAt, note: 'remote note');
 
-      await adapter.pushUpsert(db, payloadFor(base));
+    await adapter.pushUpsert(db, payloadFor(base));
 
-      final local = await db.expenseDao.findById(expenseId);
-      expect(local!.note, 'remote note');
-      expect(local.isDirty, isFalse);
-      final logged = AppLogger.instance.recentEntries.any(
-        (entry) =>
-            entry.message.contains('conflict') &&
-            entry.message.contains(expenseId),
-      );
-      expect(logged, isTrue);
-    },
-  );
+    final local = await db.expenseDao.findById(expenseId);
+    expect(local!.note, 'remote note');
+    expect(local.isDirty, isFalse);
+    final logged = AppLogger.instance.recentEntries.any(
+      (entry) =>
+          entry.message.contains('conflict') &&
+          entry.message.contains(expenseId),
+    );
+    expect(logged, isTrue);
+  });
+
+  test('a genuinely newer local edit still wins after the remote device\'s '
+      'own reconnect delay inflated its server updated_at past ours (Gate 4 '
+      '/ T-M2.11 2026-09-07 fix) — conflict resolution must compare '
+      'client_edited_at, not the trigger-touched updated_at', () async {
+    // Mirrors the real two-device bug exactly: Vineet edits at 07:13, offline
+    // for ~3 minutes, reconnects and pushes at 07:16:42 — touch_updated_at()
+    // stamps the server row's updated_at to that receipt time, 21s *after*
+    // Rupesh's own, genuinely newer, 07:16:21 edit. Comparing raw
+    // updated_at (the pre-fix behaviour) would wrongly call Vineet's edit
+    // newer; client_edited_at preserves Vineet's true 07:13 edit time, so
+    // Rupesh's local edit correctly compares as newer.
+    final base = DateTime.utc(2026, 9, 7, 1, 43); // 07:13 IST
+    final vineetsTrueEditTime = base;
+    final vineetsServerReceiptTime = DateTime.utc(2026, 9, 7, 1, 46, 42); // 07:16:42 IST
+    final rupeshsTrueEditTime = DateTime.utc(2026, 9, 7, 1, 46, 21); // 07:16:21 IST
+
+    await insertLocal(
+      updatedAt: rupeshsTrueEditTime,
+      baseUpdatedAt: base.toIso8601String(),
+      dirty: true,
+      localUpdatedAt: rupeshsTrueEditTime,
+      note: 'Rupesh 222',
+    );
+    remote.casResult = null; // Vineet's push already moved the row
+    remote.serverRow = payloadFor(
+      vineetsServerReceiptTime, // updated_at: inflated by the server trigger
+      note: 'Vineet 111',
+      clientEditedAt: vineetsTrueEditTime, // the genuine, untouched edit time
+    );
+
+    await expectLater(
+      adapter.pushUpsert(db, payloadFor(rupeshsTrueEditTime, note: 'Rupesh 222')),
+      throwsA(isA<SyncConflictRetryException>()),
+      reason:
+          "Rupesh's edit is genuinely newer than Vineet's, so it must "
+          'retry and eventually win — not be silently discarded',
+    );
+
+    final local = await db.expenseDao.findById(expenseId);
+    expect(local!.note, 'Rupesh 222', reason: 'the newer local edit is kept');
+    expect(local.isDirty, isTrue);
+  });
 
   test('a brand-new row (no base yet) pushes unconditionally', () async {
     final now = DateTime.utc(2026, 1, 1);
@@ -259,73 +303,70 @@ void main() {
     expect(local.baseUpdatedAt, now.toIso8601String());
   });
 
-  test(
-    'two same-device edits queued before either syncs both survive, even '
-    'when the server trigger advances updated_at past what each payload '
-    'claimed (Gate 10 2026-09-05 fix)',
-    () async {
-      // Mirrors `touch_updated_at()`'s GREATEST(now(), incoming): after being
-      // offline, the server's real clock is later than either edit's
-      // client-side timestamp, so it stamps its own value on every write —
-      // never exactly what the payload claimed.
-      final t0 = DateTime.utc(2026, 1, 1, 0, 0);
-      final t1 = DateTime.utc(2026, 1, 1, 0, 1);
-      final serverNowAtFirstPush = DateTime.utc(2026, 1, 1, 0, 10);
-      final serverNowAtSecondPush = DateTime.utc(2026, 1, 1, 0, 11);
+  test('two same-device edits queued before either syncs both survive, even '
+      'when the server trigger advances updated_at past what each payload '
+      'claimed (Gate 10 2026-09-05 fix)', () async {
+    // Mirrors `touch_updated_at()`'s GREATEST(now(), incoming): after being
+    // offline, the server's real clock is later than either edit's
+    // client-side timestamp, so it stamps its own value on every write —
+    // never exactly what the payload claimed.
+    final t0 = DateTime.utc(2026, 1, 1, 0, 0);
+    final t1 = DateTime.utc(2026, 1, 1, 0, 1);
+    final serverNowAtFirstPush = DateTime.utc(2026, 1, 1, 0, 10);
+    final serverNowAtSecondPush = DateTime.utc(2026, 1, 1, 0, 11);
 
-      await insertLocal(
-        updatedAt: t1,
-        baseUpdatedAt: null,
-        dirty: true,
-        localUpdatedAt: t1,
-        note: 'has_receipt=true edit',
-      );
+    await insertLocal(
+      updatedAt: t1,
+      baseUpdatedAt: null,
+      dirty: true,
+      localUpdatedAt: t1,
+      note: 'has_receipt=true edit',
+    );
 
-      // Entry #1: the original create, queued first, payload frozen at t0.
-      remote.casResult = serverNowAtFirstPush.toIso8601String();
-      await adapter.pushUpsert(db, payloadFor(t0, note: 'create'));
+    // Entry #1: the original create, queued first, payload frozen at t0.
+    remote.casResult = serverNowAtFirstPush.toIso8601String();
+    await adapter.pushUpsert(db, payloadFor(t0, note: 'create'));
 
-      final afterFirstPush = await db.expenseDao.findById(expenseId);
-      expect(
-        afterFirstPush!.baseUpdatedAt,
-        serverNowAtFirstPush.toIso8601String(),
-        reason:
-            'the new base must be what the server actually stored, not the '
-            "payload's stale t0 claim",
-      );
+    final afterFirstPush = await db.expenseDao.findById(expenseId);
+    expect(
+      afterFirstPush!.baseUpdatedAt,
+      serverNowAtFirstPush.toIso8601String(),
+      reason:
+          'the new base must be what the server actually stored, not the '
+          "payload's stale t0 claim",
+    );
 
-      // Entry #2: the has_receipt edit, queued second, payload frozen at t1.
-      // Its CAS check must be against serverNowAtFirstPush (the corrected
-      // base) — which is exactly what a real second CAS call would match,
-      // so this must succeed rather than be treated as a remote conflict.
-      remote.casResult = serverNowAtSecondPush.toIso8601String();
-      await adapter.pushUpsert(db, payloadFor(t1, note: 'has_receipt=true edit'));
+    // Entry #2: the has_receipt edit, queued second, payload frozen at t1.
+    // Its CAS check must be against serverNowAtFirstPush (the corrected
+    // base) — which is exactly what a real second CAS call would match,
+    // so this must succeed rather than be treated as a remote conflict.
+    remote.casResult = serverNowAtSecondPush.toIso8601String();
+    await adapter.pushUpsert(db, payloadFor(t1, note: 'has_receipt=true edit'));
 
-      expect(
-        remote.lastCasExpectedBase,
-        serverNowAtFirstPush.toIso8601String(),
-        reason: "the second push's CAS must target the real server value",
-      );
-      final afterSecondPush = await db.expenseDao.findById(expenseId);
-      expect(
-        afterSecondPush!.note,
-        'has_receipt=true edit',
-        reason:
-            'the second edit must not be silently discarded as a spurious '
-            "conflict with the device's own first push",
-      );
-      expect(afterSecondPush.isDirty, isFalse);
-      expect(
-        afterSecondPush.baseUpdatedAt,
-        serverNowAtSecondPush.toIso8601String(),
-      );
-      expect(
-        AppLogger.instance.recentEntries,
-        isEmpty,
-        reason: 'no conflict was ever genuinely lost, so nothing is logged',
-      );
-    },
-  );
+    expect(
+      remote.lastCasExpectedBase,
+      serverNowAtFirstPush.toIso8601String(),
+      reason: "the second push's CAS must target the real server value",
+    );
+    final afterSecondPush = await db.expenseDao.findById(expenseId);
+    expect(
+      afterSecondPush!.note,
+      'has_receipt=true edit',
+      reason:
+          'the second edit must not be silently discarded as a spurious '
+          "conflict with the device's own first push",
+    );
+    expect(afterSecondPush.isDirty, isFalse);
+    expect(
+      afterSecondPush.baseUpdatedAt,
+      serverNowAtSecondPush.toIso8601String(),
+    );
+    expect(
+      AppLogger.instance.recentEntries,
+      isEmpty,
+      reason: 'no conflict was ever genuinely lost, so nothing is logged',
+    );
+  });
 
   test(
     'a sub-second-precision server timestamp round-trips exactly (Gate 10 '

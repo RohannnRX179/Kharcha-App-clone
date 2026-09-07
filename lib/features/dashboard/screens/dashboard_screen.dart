@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/category_visuals.dart';
 import '../../../core/money/money.dart';
 import '../../../core/time/app_time.dart';
@@ -26,16 +25,25 @@ import '../../expenses/controllers/expense_list_preset_filter_controller.dart';
 import '../controllers/selected_month_controller.dart';
 import '../widgets/month_selector.dart';
 import '../widgets/section_card.dart';
+import '../widgets/update_banner.dart';
 
 /// Household + per-member monthly totals (spec §11.4, T-6.1..T-6.5, T-8.4,
 /// T-9.5). Ships cards 1-6. Card 7 (the sync/offline banner) is already
-/// rendered above every tab by [AppShell].
+/// rendered above every tab by [AppShell]. The in-app update banner (spec
+/// §11.14, T-14.6) sits above every card, per that spec section's own
+/// wording ("a dismissible banner on the Dashboard").
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final month = ref.watch(selectedMonthControllerProvider);
+    // Spec D20/T-M2.10: a household of one is a first-class case, not a
+    // degraded family — comparing a solo user to themselves is noise, so
+    // the per-member breakdown card is hidden entirely rather than shown
+    // with nothing to compare against.
+    final isSolo =
+        (ref.watch(householdProfilesProvider).value?.length ?? 0) <= 1;
 
     return Scaffold(
       appBar: AppBar(title: MonthSelector(month: month)),
@@ -44,13 +52,16 @@ class DashboardScreen extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            const UpdateBanner(),
             _HouseholdSummaryCard(monthStart: month),
             const SizedBox(height: 12),
             _BudgetProgressCard(monthStart: month),
             const SizedBox(height: 12),
             const _PendingRecurringCard(),
-            const SizedBox(height: 12),
-            _MemberBreakdownCard(monthStart: month),
+            if (!isSolo) ...[
+              const SizedBox(height: 12),
+              _MemberBreakdownCard(monthStart: month),
+            ],
             const SizedBox(height: 12),
             _TopCategoriesCard(monthStart: month),
             const SizedBox(height: 12),
@@ -163,27 +174,28 @@ class _HouseholdSummaryCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final previousMonth = AppTime.monthAfter(monthStart, -1);
 
     return SectionCard(
       title: 'This month',
       child: StreamBuilder<int>(
         stream: repo.watchExpenseTotal(
-          householdId: AppConstants.seedHouseholdId,
+          householdId: householdId,
           monthStart: monthStart,
         ),
         builder: (context, expenseSnap) {
           final expenseTotal = expenseSnap.data ?? 0;
           return StreamBuilder<int>(
             stream: repo.watchIncomeTotal(
-              householdId: AppConstants.seedHouseholdId,
+              householdId: householdId,
               monthStart: monthStart,
             ),
             builder: (context, incomeSnap) {
               final incomeTotal = incomeSnap.data ?? 0;
               return StreamBuilder<int>(
                 stream: repo.watchExpenseTotal(
-                  householdId: AppConstants.seedHouseholdId,
+                  householdId: householdId,
                   monthStart: previousMonth,
                 ),
                 builder: (context, prevSnap) {
@@ -415,6 +427,7 @@ class _MemberBreakdownCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final profiles = ref.watch(householdProfilesProvider).value ?? const [];
     final profilesById = {for (final p in profiles) p.id: p};
 
@@ -422,13 +435,15 @@ class _MemberBreakdownCard extends ConsumerWidget {
       title: 'Per member',
       child: StreamBuilder<List<GroupedTotal>>(
         stream: repo.watchExpenseByMember(
-          householdId: AppConstants.seedHouseholdId,
+          householdId: householdId,
           monthStart: monthStart,
         ),
         builder: (context, snapshot) {
           final totals = snapshot.data ?? const [];
           if (totals.isEmpty) {
-            return const EmptySectionBody(message: 'No expenses logged this month yet.');
+            return const EmptySectionBody(
+              message: 'No expenses logged this month yet.',
+            );
           }
           final householdTotal = totals.fold(
             0,
@@ -545,6 +560,7 @@ class _TopCategoriesCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final categories = ref.watch(categoriesProvider).value ?? const [];
     final categoriesById = {for (final c in categories) c.id: c};
 
@@ -553,14 +569,14 @@ class _TopCategoriesCard extends ConsumerWidget {
       onSeeAll: () => context.go(AppRoutes.analytics),
       child: StreamBuilder<int>(
         stream: repo.watchExpenseTotal(
-          householdId: AppConstants.seedHouseholdId,
+          householdId: householdId,
           monthStart: monthStart,
         ),
         builder: (context, totalSnap) {
           final householdTotal = totalSnap.data ?? 0;
           return StreamBuilder<List<GroupedTotal>>(
             stream: repo.watchTopCategories(
-              householdId: AppConstants.seedHouseholdId,
+              householdId: householdId,
               monthStart: monthStart,
             ),
             builder: (context, snapshot) {
@@ -636,6 +652,7 @@ class _RecentActivityCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
+    final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final categories = ref.watch(categoriesProvider).value ?? const [];
     final profiles = ref.watch(householdProfilesProvider).value ?? const [];
     final categoriesById = {for (final c in categories) c.id: c};
@@ -644,9 +661,7 @@ class _RecentActivityCard extends ConsumerWidget {
     return SectionCard(
       title: 'Recent activity',
       child: StreamBuilder<List<domain.Expense>>(
-        stream: repo.watchRecentExpenses(
-          householdId: AppConstants.seedHouseholdId,
-        ),
+        stream: repo.watchRecentExpenses(householdId: householdId),
         builder: (context, snapshot) {
           final recent = snapshot.data ?? const [];
           if (recent.isEmpty) {
