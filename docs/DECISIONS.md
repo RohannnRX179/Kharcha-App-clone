@@ -2903,3 +2903,78 @@ at 527 (up from 525). **Still needs a live two-device re-run** (T-M2.7's
 own leave/rejoin scenario) to move Gate M2 from "blocked" to actually
 verified — the fix is unverified against a real device/Supabase project,
 same as every fix in this codebase until it's run live once.
+
+## 2026-09-07 — T-M2.7 live re-verification: both bugs confirmed fixed; one pre-existing gap re-confirmed
+
+Re-ran T-M2.11/T-M2.7's exact two-device leave/rejoin scenario against
+the real Supabase project, on the same two real Android emulators
+(`kharcha_test` = Vineet/admin, `kharcha_test_2` = Rupesh/member), using
+the household's actual real member accounts — same setup as every prior
+attempt this session.
+
+**Most of the session was spent on an unrelated environment problem, not
+app code.** Both emulators developed severe, persistent DNS resolution
+failures (`Failed host lookup`, ~every 15-20s, both devices, independent
+of which Wi-Fi network the host machine was on) that made every network
+call — sign-in included — fail intermittently or entirely. Diagnosed and
+ruled out in order: a stuck DNS proxy (fixed briefly, then recurred),
+Android's Private DNS/DoT (forced off, no change), the host's own
+Wi-Fi/ISP (switched networks entirely, no change), stuck OS/kernel
+network state (full Mac restart, no change). Two things that did help:
+(1) a full `-wipe-data` factory reset of Rupesh's emulator, which cut the
+failure rate sharply — pointing at corrupted local device/resolver state
+rather than the network path itself; (2) disabling the emulator's virtual
+Wi-Fi radio entirely and forcing cellular-only, after `adb logcat` caught
+literal `wpa_supplicant: wlan0: CTRL-EVENT-BEACON-LOSS` events — a known
+Android-emulator quirk where the simulated Wi-Fi radio periodically drops
+its own simulated access-point signal. Independently confirmed throughout
+that Supabase itself was never at fault: the exact account credentials
+and the `/auth/v1/token` and `/auth/v1/health` endpoints were tested
+directly via `curl` from the host machine at multiple points and always
+returned clean, valid responses. Once both fixes were applied, sign-in
+and sync both succeeded cleanly and repeatably.
+
+**Also confirmed along the way**: this codebase's release APK swallows
+every *handled* failure silently as far as `adb logcat` is concerned —
+`AppLogger`'s entries never reach it, so a real, caught sign-in/RPC
+failure and a generic UI-level flake are indistinguishable from outside
+the app. Re-ran the debug build (`fvm flutter run`, not `flutter build
+apk --release`) on both devices for the rest of this session specifically
+to get a live, attached Dart console — this is the same technique
+T-M2.7's original session used ("reading the real exception off a live
+VM-service connection"), and a release-mode APK cannot expose it at all
+(the Dart VM service is stripped in release builds). Worth remembering
+for any future live-device debugging session on this project: don't
+`flutter build apk --release` and rely on `adb logcat` if the failure
+might be a caught-and-mapped one, which most of this app's errors are by
+design.
+
+**Once the network was stable, both target bugs were confirmed fixed on
+a real device:**
+
+1. **`profiles.householdId` nullable crash (bug 1)** — Rupesh tapped
+   "Leave household" on the confirmation dialog; the app navigated
+   cleanly and immediately to the onboarding gate (Create/Join a
+   household), staying there — not bouncing back to the Dashboard, the
+   exact failure T-M2.7 first found. No exception in the attached debug
+   console.
+2. **`SyncEngine` not re-arming after sign-out/sign-in (bug 2)** — after
+   the local wipe forced a fresh sign-in, Rupesh's device synced the real
+   household data cleanly on the very next "Sync now" with no manual
+   app-restart needed (the workaround T-M2.7 needed before this fix).
+
+**One finding re-confirmed, not new**: after Rupesh left, Vineet's device
+— on a completely clean sync with zero errors — still showed Rupesh as
+one of 4 household members. This is the same gap T-M2.7 already flagged:
+there is no delete/tombstone path for `profiles`, and once
+`leave_household()` nulls out Rupesh's `household_id` server-side, RLS
+simply excludes that row from anything Vineet's household-scoped queries
+can see — there is no negative signal for Vineet's device to act on. This
+is a real, still-open gap, but it is architecturally distinct from (and
+was already known ahead of) the two bugs this session set out to verify,
+so it was left unfixed here per the user's explicit instruction to record
+findings rather than expand scope this session.
+
+Both fixes are now live-verified end to end. Gate M2's own outstanding
+items beyond this (T-M2.12's full Gate 14 screen coverage, the brand-new
+signup path needing a real inbox) remain untouched by this session.
