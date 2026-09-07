@@ -2633,72 +2633,142 @@ regression test in `push_conflict_resolution_test.dart`.
 (matches the ₹111/₹222/₹150 sequence of prior live-test artifacts) — left
 for a human to reconcile.
 
+## 2026-09-07 — T-M2.12/T-M2.7 live pass: one bug fixed, two new bugs found (not fixed)
 
-### iOS platform restored — the `com.apple.provenance` blocker is fixed upstream
+Live verification session on the two real emulators against the real
+Supabase project, continuing where Gate 4's live pass left off. Full
+detail in PROGRESS.md's own rows for this date; this entry is the deeper
+trace for the two unresolved findings, kept here per this file's usual
+split (PROGRESS.md = what happened, DECISIONS.md = why/how it was
+diagnosed).
 
-- Phase 0 recorded the iOS half of Gate 0 as **BLOCKED** on macOS tagging
-  build output with a `com.apple.provenance` extended attribute that
-  `codesign` unconditionally refuses to sign, worked around at the time by
-  hand-patching `removeExtendedAttributes` in the FVM-managed SDK's
-  `packages/flutter_tools/lib/src/ios/mac.dart` — a patch that entry
-  explicitly noted "is NOT part of the Kharcha repo" and would be lost on
-  the next SDK reinstall.
-- That patch is now **unnecessary**: Flutter 3.47.2 ships the same fix
-  upstream, removing `com.apple.provenance` by name alongside
-  `com.apple.FinderInfo`. Verified it is genuinely upstream rather than a
-  surviving local edit — this session installed the SDK into an empty
-  `~/fvm/versions/` from scratch and `git status` in the SDK checkout is
-  clean. `flutter run` on the simulator now completes with no codesign
-  failure at any step.
-- `ios/` was therefore re-created rather than repaired, using the same
-  Flutter revision `.metadata` already pins (`d3b14c8769`), so the template
-  is consistent with the Android side rather than a mix of two SDK versions.
-  The first attempt used the machine's global Homebrew Flutter (3.44.2,
-  Dart 3.12.2), which cannot resolve this project at all (`pubspec.yaml`
-  needs SDK `^3.13.2`) — FVM, which the project has pinned since T-0.2, is
-  not optional here.
+**Fixed: `ExpenseListPresetFilterController` crash.** Reproduced the
+Gate-10-era "Bug found, unrelated, not fixed" note by tapping a member's
+row on the Dashboard's Per-member card, which sets the preset filter
+provider and navigates to the Expenses tab. `_ExpenseListScreenState
+.initState` read the preset and, if non-null, called
+`ExpenseListPresetFilterController.clear()` *synchronously* — a provider
+mutation during the widget tree's build phase, which Riverpod's own
+`_debugAssertNotificationAllowed` forbids, throwing `Bad state: Tried to
+modify a provider while the widget tree was building` and replacing the
+whole tab with Flutter's red error widget. Fixed with the framework's own
+suggested remedy: wrap the `clear()` call in
+`WidgetsBinding.instance.addPostFrameCallback`, deferring it past the
+current build. Live-verified clean afterward, including that
+`IndexedStack` correctly keeps the Expense List's `State` alive across
+tab switches, so `initState` (and the now-deferred clear) only ever fires
+once per mount — a second visit to the tab doesn't re-trigger it.
 
-### `flutter create` on an existing project rewrites more than the platform folder
+**Found, not fixed: `profiles.householdId` non-nullable vs. a genuinely
+nullable server column.** Attempting Gate M2's own two-device leave/
+rejoin scenario (Rupesh leaving Panicker Family from his device, Vineet
+watching from his), the "Leave household" RPC call itself returned
+successfully (no exception reached the client), but the local wipe/
+onboarding-redirect T-M2.7 built never happened, on either device. The
+symptom looked exactly like the T-M2.11-era pattern of "client believes
+success, server disagrees" — except this time the server was right and
+the client's own read-back was silently broken. Diagnostics' Recent Logs
+made the actual exception visible where no other surface would have:
+`Profile refresh failed for <rupesh-id> — type 'Null' is not a subtype
+of type 'String' in type cast`, repeated on every sync attempt since the
+leave. Traced to `domain/models/profile.dart`:
 
-Running `fvm flutter create --platforms=ios .` also modified three tracked
-files that have nothing to do with iOS, all reverted before committing:
+```dart
+@JsonKey(name: 'household_id') required String householdId,
+```
 
-- `.gitignore` — re-introduced the template's blanket `.fvm/` ignore,
-  undoing the Phase-0 decision above to keep `.fvm/fvm_config.json`
-  tracked. Left as-is this would have quietly untracked the pinned
-  Flutter version.
-- `.metadata` — dropped the `android` platform block from the `migration`
-  list while adding nothing new (the `ios` entry was already there from
-  T-0.3, since the original project *was* created with both platforms).
-- `pubspec.lock` — resolved 24 packages upward, `analyzer` 13.3.0 → 14.3.0
-  among them, despite the lockfile being committed deliberately per T-0.5.
-  Reverting the lock and re-running `fvm flutter pub get` reproduces the
-  committed resolution exactly.
+— a non-nullable `String`, mirrored by an equally non-nullable Drift
+column (`profiles_table.dart`: `TextColumn get householdId => text()();`,
+no `.nullable()`). Both have been non-nullable since the field was first
+written in Phase 2, when every profile always belonged to the one seeded
+household by construction. T-M1.1's `0011_multitenant_core.sql` made the
+*Postgres* column nullable to support the entire premise of Phase M2 (an
+account can exist with no household, or leave one) — but nothing ever
+updated the Dart-side representation to match, because every code path
+that reads a profile from remote JSON (`ProfileRepository.refresh`) had,
+until this test, only ever been exercised against members who already
+had a household. `leave_household()`'s own `update ... set household_id
+= null` is correct and did fire (confirmed: Rupesh's server-side row was
+genuinely null'd, since rejoining via `join_household` — which raises
+`already_in_household` if the profile's `household_id` is non-null —
+succeeded without that error). The crash is caught by `refresh()`'s own
+try/catch (`AppLogger.instance.warn(...)`, by design — see that method's
+doc comment, "failures are logged and swallowed, the local cache stays
+the source of truth") — but "logged and swallowed" here means the *one*
+mechanism that was supposed to detect "my household changed" (T-M2.7's
+`refreshOwnProfile` → compare stored vs. current household id →
+`wipeHouseholdData()`) never runs, because the local profile object
+backing that comparison is never updated. The bug is silent by
+construction: no crash reaches the user, no failed-item appears in
+Diagnostics' "Failed items" section (that section is for outbox entries,
+not background refreshes), and the local household data just... stays,
+looking perfectly normal, forever. Not fixed this session (schema
+migration + Freezed model + every non-null-assuming call site is a wider
+change than this session's scope, per the user's explicit instruction to
+record rather than fix). A secondary, related gap noted but not
+separately root-caused: since `profiles` has no delete/tombstone path at
+all (T-14.0's own note: "no `deleted_at` column, no delete RLS policy, no
+repository code ever enqueues one"), a household-scoped incremental pull
+on *another* member's device has no way to represent "this profile used
+to be visible to you and now isn't" — confirmed live, Vineet's device
+kept showing Rupesh as a normal active member with no prompting, for as
+long as Rupesh's own device was stuck. This is the same absence of a
+delete signal already flagged for `households`/`profiles` back in
+Phase 14, now shown to matter in practice rather than only in theory.
 
-### iOS launch screen mirrors Android's, rather than the Flutter template's
+**Found, not fixed: `SyncEngine` never re-arms after a sign-out→sign-in
+cycle.** Recovering from the bug above (sign out on Rupesh's device to
+force a clean local cache, sign back in, rejoin via the still-valid
+invite code) exposed a second, unrelated bug: after "You've joined
+Panicker Family" confirmed the RPC succeeded, the app bounced back to the
+onboarding gate instead of the Dashboard, and stayed there — pulling
+Rupesh's `kharcha.sqlite` off the device directly showed **zero rows in
+every table**, unchanged no matter how long we waited, how many times
+"Sync now" was tapped, or whether the app was backgrounded and
+foregrounded. Grepping the whole codebase for every call site of
+`SyncEngine.start()`/`.stop()` found exactly three: `app.dart`'s
+`initState()` calls `.start()` **once**, at process boot;
+`SignOutController` calls `.stop()` on sign-out; and a `ref.onDispose`
+teardown in the engine's own provider. Nothing calls `.start()` again
+after a `.stop()`. `app.dart`'s "trigger 1" — `ref.listen
+(currentSessionProvider, (previous, next) { if (previous == null && next
+!= null) ref.read(syncEngineProvider).sync(); })`, meant to cover a
+sign-in happening later in the same app session per its own comment
+("`sync()` is a harmless no-op if nothing is signed in yet... the
+`ref.listen` in `build()` covers a sign-in that happens later") — only
+ever calls `.sync()`, never `.start()`. But `sync()`'s very first
+statement is `if (_syncing || _stopped) return;`, and `.stop()` sets
+`_stopped = true` with nothing left to ever set it back to `false` except
+`.start()` itself. So once a user signs out once, *every* future call to
+`sync()` — periodic timer (which is also cancelled by `stop()` and never
+restarted), connectivity-triggered, manual "Sync now", or any
+`_triggerSync()` fired from an RPC repository — silently no-ops for the
+remainder of that process's life. This directly contradicts this
+project's own documented intent for this exact mechanism, written at
+T-4.5 (Gate 4, Phase 4): "`start()`/`stop()` are idempotent and
+resumable (sign-out calls `stop()`, next sign-in re-arms)" — the
+resumability was designed for and described, but the actual re-arm call
+was never wired anywhere. Confirmed as the true cause, not a guess: fully
+killing the app (`adb shell am force-stop com.panicker.kharcha`) and
+relaunching it fresh (re-running `initState()`'s `engine.start()`)
+immediately fixed it — Rupesh landed on the Dashboard, and "Sync now"
+pulled the complete real household data cleanly on the first try. Not
+fixed in code this session (the fix itself is small and well-understood
+— call `.start()`, not `.sync()`, from the sign-in trigger, or reset
+`_stopped = false` there before calling `sync()` — but left unimplemented
+per the user's explicit instruction to record findings rather than fix
+this pass). Worth flagging plainly: unlike every other correctness bug
+this project has found and logged, this one is not specific to Phase M2
+or to any edge case — it reproduces on the single most ordinary flow an
+app can have (sign out, sign back in), and would affect any real user of
+this app the first time they ever did that within one app session.
 
-Android's launch window (`drawable-v21/launch_background.xml` +
-`values/`/`values-night/styles.xml`) is a plain `?android:colorBackground`
-fill with no logo, so it follows the system light/dark setting. The Flutter
-iOS template instead hardcodes white with a centred `LaunchImage`. Matched
-Android by stripping the image view and filling the root view with
-`systemBackgroundColor` — UIKit's dynamic white/black — so neither platform
-flashes a light panel before the first Flutter frame on a device in dark
-mode. The `LaunchImage` imageset is left in the asset catalog, unreferenced,
-the same way Android keeps its `<bitmap>` block commented out for whenever
-T-16.2's real icon work happens.
-
-Nothing above the platform layer needed a change for the splash journey:
-`main()`'s bootstrap, `SplashScreen`, and the router's auth `redirect` are
-all pure Dart and behave identically on both platforms.
-
-### Simulator smoke test ran against a placeholder Supabase config
-
-`config/dev.json` is gitignored and holds the real project's credentials on
-the build machine; this session created a placeholder one
-(`https://placeholder.supabase.co`) purely so `AppConfig.assertValid()`
-passes. That is sufficient for exactly the journey under test — splash →
-`redirect` → `/login` never makes a network call, since it turns only on
-`client.auth.currentSession` being null — and the run log confirms
-`***** Supabase init completed *****` with a placeholder URL. Actually
-signing in from iOS against the real project remains unverified.
+**Recovery, not a workaround.** Both devices were left in the correct,
+fully-converged state — Rupesh is genuinely a member of Panicker Family
+again on both the server and both local caches, confirmed by pulling
+real household data (₹275/₹50 expenses, ₹50,000 income) after the app
+restart. Unlike this project's usual precedent of leaving live-test
+artifacts for a human to reconcile, there was nothing left to leave here:
+the diagnostic process (force-restart to re-arm sync) *was* the fix for
+this session's test data, even though the underlying code bug that made
+it necessary remains open.
