@@ -3225,3 +3225,121 @@ categories, and all 9 `sync_meta` rows populated with the real household
 id and real cursor timestamps — where the pre-fix code left `sync_meta`
 completely empty and 0 expenses after the same single action. No errors
 in `logcat` and no "Profile refresh failed" entries during the run.
+
+## 2026-09-08 — First physical iOS device install (iPhone 15, iOS 26.6.1); `flutter run` blocked, worked around
+
+First-ever install of Kharcha onto a real iPhone rather than the
+simulator (Gate 0's iOS half, 2026-09-06, only ever ran the simulator).
+Several environment gaps had to be cleared in sequence, each a genuine
+first-time-only blocker rather than a repeatable step:
+
+1. **Device paired but Flutter reported it "unpaired".** `xcrun devicectl
+   list devices` saw the phone immediately, but `flutter devices` refused
+   it with "Pair with the device in the Xcode Devices Window" even after
+   accepting the "Trust This Computer?" prompt on the phone — trusting the
+   computer and Xcode's own device pairing are separate handshakes on this
+   Xcode version. Fixed by simply opening the project in Xcode
+   (`open -a Xcode ios/Runner.xcodeproj`) with the phone connected; Xcode
+   completed the pairing in the background within ~20s with no further
+   user action needed.
+2. **Developer Mode.** iOS 16+ requires Settings → Privacy & Security →
+   Developer Mode enabled (with a restart) before a dev build can install
+   at all — a one-time per-device setting, done by the user.
+3. **Missing iOS 26.5 platform component.** `xcodebuild` refused every
+   destination for the device with "iOS 26.5 is not installed. Please
+   download and install the platform from Xcode > Settings > Components"
+   even though `xcodebuild -showsdks` already listed iOS 26.5 as an
+   available SDK — the SDK and the full platform component (which
+   includes on-device debugging support) are apparently tracked
+   separately on this Xcode version. Fixed via
+   `xcodebuild -downloadPlatform iOS` (a real, working CLI flag — no need
+   for the Settings → Components GUI), an 8.52 GB download that completed
+   in a few minutes.
+4. **No Xcode account.** `security find-identity -v -p codesigning`
+   showed 0 valid identities and `xcodebuild` failed with "No Accounts:
+   Add a new account in Accounts settings" — this machine's Xcode had
+   never been signed into an Apple ID. Fixed by the user signing in under
+   Xcode → Settings → Accounts (a free personal-team Apple ID is
+   sufficient for sideload builds; no paid Developer Program needed).
+5. **Stale `DEVELOPMENT_TEAM`.** Once signed in, the error changed to "No
+   Account for Team 'XXHKS9YX94'" — `ios/Runner.xcodeproj/project.pbxproj`
+   had a hardcoded team ID from whenever iOS support was originally set up
+   (T-0.3 iOS half / Gate 0, 2026-09-06), which doesn't match this
+   session's freshly-created Personal Team. The real team ID
+   (`F83DHF57GX`, "Vineet Panicker (Personal Team)") was read from
+   `~/Library/Preferences/com.apple.dt.Xcode.plist`'s
+   `IDEProvisioningTeamByIdentifier` key and swapped in via `sed` across
+   all 3 occurrences in the pbxproj. `xcodebuild ... -allowProvisioningUpdates
+   build` then succeeded outright — **`BUILD SUCCEEDED`**, correctly signed
+   with a real "Apple Development" identity and an auto-generated "iOS Team
+   Provisioning Profile: com.panicker.kharcha".
+6. **`flutter run` itself still fails**, in both debug and release mode,
+   on this exact device/OS/Xcode combination — a distinct bug from
+   everything above, and not something a project config fix resolves.
+   flutter_tools' internal `debug_unpack_ios` build target
+   (`_signFramework` in `packages/flutter_tools/lib/src/build_system/
+   targets/ios.dart`) ad-hoc-signs `Flutter.framework/Flutter` with
+   identity `-` before Xcode's own build even runs, and that specific
+   codesign call fails: "resource fork, Finder information, or similar
+   detritus not allowed". The framework carries a `com.apple.provenance`
+   extended attribute on every file in the bundle (confirmed via `ls -le@`)
+   — flutter_tools already has a documented fix for exactly this
+   (`removeExtendedAttributes` in `lib/src/ios/mac.dart`, referencing
+   flutter/flutter#189734: try a targeted `xattr -d com.apple.provenance`,
+   then fall back to a recursive `xattr -c -r` since the targeted delete is
+   known to silently no-op on "some macOS versions"). On this machine
+   (macOS 26.6 build 25G83, Xcode 26.6/17F113) **neither actually removes
+   it** — confirmed directly: `xattr -d com.apple.provenance <file>`
+   reports exit 0 but `xattr -l` still lists it afterward; a full recursive
+   `xattr -cr`, run manually with the identical flags flutter_tools uses,
+   behaves the same; even replacing the file with a byte-for-byte copy to a
+   brand-new inode (`cat orig > new`, ruling out a cloned/stale xattr) still
+   shows the attribute immediately. This looks like a newer, stricter
+   provenance-tracking behavior in this macOS release that the existing
+   upstream fix wasn't written against. Filed as product feedback this
+   session (not a project bug — no project code involved).
+
+   **Workaround** (used for both the initial install and, once it turned
+   out debug mode has its own separate restriction — see below, — the
+   release-mode reinstall): bypass `flutter run`'s build pipeline
+   entirely. Build with plain `xcodebuild` (step 5 above, which signs the
+   *whole app bundle* with the real identity in Xcode's own final sign
+   step and never hits flutter_tools' internal ad-hoc pre-sign at all),
+   then install and launch directly:
+   ```
+   xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner \
+     -configuration Release -destination 'id=<device-id>' \
+     -allowProvisioningUpdates build
+   xcrun devicectl device install app --device <device-id> \
+     "$(DERIVED_DATA)/Build/Products/Release-iphoneos/Runner.app"
+   xcrun devicectl device process launch --device <device-id> \
+     com.panicker.kharcha
+   ```
+   Costs hot reload (nothing is attached the way `flutter run` attaches),
+   but produces a genuinely working install.
+7. **First launch refused: "invalid code signature... has not been
+   explicitly trusted".** Expected — a free-provisioning-profile app needs
+   the developer certificate explicitly trusted once per install, at
+   Settings → General → VPN & Device Management on the device. After that,
+   `devicectl device process launch` succeeded.
+8. **Debug build launched but immediately showed**: "In iOS 14+ debug mode
+   Flutter apps can only be launched from Flutter tooling / IDEs with the
+   Flutter plugin... Alternatively, build in profile or release modes to
+   enable launching from the home screen." This is expected, documented
+   Flutter behavior (a debug build's JIT dev-server handshake requires the
+   launch to come from `flutter run`/an IDE, not a bare process-launch) —
+   not related to any of the bugs above, and not fixable by working around
+   them, since `flutter run` itself is what's broken here (step 6). Fixed
+   by rebuilding in **Release** configuration via the same `xcodebuild` +
+   `devicectl` workaround — Release has no such restriction and launched
+   cleanly. Confirmed the release build's `ios/Flutter/Generated.xcconfig`
+   still carried the real `DART_DEFINES` (Supabase URL + publishable key)
+   from an earlier `flutter run --dart-define-from-file=config/dev.json`
+   invocation whose dart-define/config-generation step succeeds even
+   though the later codesign step fails — so the installed app is
+   genuinely talking to the real production Supabase project, not a stub.
+
+**For next time** (this free Apple ID signature expires in 7 days): rerun
+the 3-command sequence in step 6 above — steps 1-5 and 7 are one-time
+per-machine/per-device setup and shouldn't need repeating unless Xcode's
+account or the device's trust state is reset.
