@@ -2978,3 +2978,71 @@ findings rather than expand scope this session.
 Both fixes are now live-verified end to end. Gate M2's own outstanding
 items beyond this (T-M2.12's full Gate 14 screen coverage, the brand-new
 signup path needing a real inbox) remain untouched by this session.
+
+## 2026-09-07 — Profiles-tombstone gap root-caused; a second, distinct sync bug found investigating it
+
+Follow-up investigation into the profiles-tombstone gap re-confirmed
+above (Vineet's device still listing Rupesh after he left), with both
+emulators still up from the same session. Root-caused precisely rather
+than left as a general description:
+
+`TableRemoteDataSource.selectSince()` (`lib/data/remote/table_remote_data_source.dart:17-30`)
+— the one shared query every syncable table's pull uses, `profiles`
+included — filters with `.eq('household_id', householdId).gt('updated_at', cursor)`.
+Confirmed live: querying Rupesh's real row directly via `curl` against
+`/rest/v1/profiles` (with his own fresh JWT) shows `household_id: null`
+server-side, exactly as `leave_household()` sets it. Because the pull
+filters on the *current* household id, a departed member's row can never
+again match this query for the remaining members' devices — not as a
+stale-cursor problem (a cursor reset doesn't help) but structurally: the
+row simply stops being addressable by any query shaped this way, for any
+device that doesn't already have a (now-stale) local copy of it.
+
+**Tested whether this is fixable today with no code change**: pulled
+Vineet's local `kharcha.sqlite` directly and confirmed his cached copy of
+Rupesh's profile row was untouched (`household_id` still the household's
+id, `sync_status='synced'`) even after a clean, error-free "Sync now" —
+because the row was never fetched again to begin with, the DAO's upsert
+never ran, and nothing ever tells it to delete a row that just silently
+stopped appearing in pulls. Confirmed with a second test: using Settings
+→ "Clear local cache and re-download" — which wipes the local DB entirely
+before re-syncing — a genuinely fresh pull correctly did **not** bring
+Rupesh back (Tanish, Trupti, and real expense data all repopulated
+correctly). So the underlying data model is sound; the only broken thing
+is a *pre-existing* local cache with no way to invalidate one specific
+stale row once its owner has left. A real fix needs either a tombstone
+mechanism (e.g. a lightweight, RLS-visible-to-former-housemates
+"departed member" event/table) or a rule that periodically re-verifies
+already-cached member rows against the server rather than trusting the
+since-cursor pull alone. Not attempted this session — documenting only,
+per the user's explicit instruction.
+
+**A second, distinct, previously-undocumented bug surfaced while running
+that "Clear local cache and re-download" test**: the feature doesn't
+actually complete a full re-sync on its first attempt. Its handler
+(`SettingsScreen._clearCacheAndResync`, `lib/features/settings/screens/settings_screen.dart:60-90`)
+does `await wipeAll(); await syncEngineProvider.sync();` — but
+`SyncEngine.sync()` (`lib/data/sync/sync_engine.dart:127-130`) does
+`await refreshOwnProfile(); final householdId = getHouseholdId();`
+immediately after, where `getHouseholdId` is `() =>
+ref.read(currentHouseholdIdProvider)` (`lib/data/repositories/profile_repository.dart:138-139`),
+itself derived from `ref.watch(currentProfileProvider).value?.householdId`
+— and `currentProfileProvider` is a Drift-stream-backed provider
+(`profile_repository.dart:120-127`). `refreshOwnProfile`'s write lands in
+Drift correctly (confirmed: the signed-in user's own profile row was
+present locally immediately afterward), but the Riverpod provider reading
+that stream doesn't necessarily see the new value synchronously in the
+same continuation right after the `await` — a known category of gap for
+this codebase (T-14.7's PROGRESS entry already noted Drift's
+stream-invalidation plumbing needing a real event-loop tick before a
+watcher reflects a fresh write). The practical effect: right after a
+`wipeAll()`, `sync()`'s very first call reads a stale/null household id,
+skips the entire household-scoped pull, and leaves every other table
+empty — confirmed directly against the pulled sqlite file (`sync_meta`
+completely empty, 0 expenses) immediately after the wipe's own `sync()`
+call returned. It still shows a "Cache cleared and re-synced." success
+message regardless of this, which is actively misleading. A **second**,
+separate "Sync now" tap immediately afterward pulled everything
+correctly (profiles, expenses, `sync_meta` cursors all populated) —
+confirming the race, not a permanently broken sync path. Not fixed this
+session, per the user's explicit instruction to document only.
