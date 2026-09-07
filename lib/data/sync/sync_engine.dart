@@ -58,7 +58,19 @@ class SyncEngine {
   /// `keepAlive` and outlives any single household. Null while signed out,
   /// before the cached profile has resolved, or for an account with no
   /// household yet.
-  final String? Function() getHouseholdId;
+  ///
+  /// Deliberately `Future`-returning, backed by a direct one-shot Drift
+  /// query rather than the Riverpod-cached `currentHouseholdIdProvider`
+  /// stream value: that provider only updates once its underlying Drift
+  /// stream notices the table changed and re-emits, which is not guaranteed
+  /// to have happened yet immediately after [refreshOwnProfile]'s own write
+  /// completes (a genuine race, not just a slow path — confirmed live via
+  /// "Clear local cache and re-download", which writes a fresh profile row
+  /// via [refreshOwnProfile] and then, on the old synchronous read, could
+  /// observe the pre-wipe/pre-write cached `null` and skip the household
+  /// pull entirely). Reading straight from Drift after the write has been
+  /// awaited has no such gap.
+  final Future<String?> Function() getHouseholdId;
 
   /// Spec §9.6 rule 2's exception: the signed-in member's own `profiles`
   /// row is always refreshed from the server, household or not, so the app
@@ -127,7 +139,7 @@ class SyncEngine {
       await refreshOwnProfile();
       if (_stopped) return;
 
-      final householdId = getHouseholdId();
+      final householdId = await getHouseholdId();
 
       // Household changed → wipe and refetch (spec §9.6 rule 3). Compared
       // before pushOutbox() runs, not after: an outbox entry queued under a
@@ -215,7 +227,15 @@ SyncEngine syncEngine(Ref ref) {
     syncMetaDao: ref.watch(appDatabaseProvider).syncMetaDao,
     publish: (state) =>
         ref.read(syncStateControllerProvider.notifier).publish(state),
-    getHouseholdId: () => ref.read(currentHouseholdIdProvider),
+    getHouseholdId: () async {
+      final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
+      if (userId == null) return null;
+      final profile = await ref
+          .read(appDatabaseProvider)
+          .profileDao
+          .findById(userId);
+      return profile?.householdId;
+    },
     refreshOwnProfile: () async {
       final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
       if (userId != null) {

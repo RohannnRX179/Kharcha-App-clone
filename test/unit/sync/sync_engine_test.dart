@@ -86,7 +86,7 @@ void main() {
       outboxDao: outboxDao,
       syncMetaDao: syncMetaDao,
       publish: published.add,
-      getHouseholdId: () => householdId,
+      getHouseholdId: () async => householdId,
       refreshOwnProfile: () async {
         refreshOwnProfileCalls++;
       },
@@ -150,7 +150,6 @@ void main() {
 
     verifyNever(() => outboxProcessor.process());
   });
-
 
   test('a successful cycle publishes SyncIdle', () async {
     when(() => connectivity.isOnline).thenAnswer((_) async => true);
@@ -261,6 +260,47 @@ void main() {
       expect(published.last, isA<SyncIdle>());
     });
 
+    test(
+      'getHouseholdId is awaited after refreshOwnProfile completes and picks '
+      'up a household id that call itself just wrote — the "Clear local '
+      'cache and re-download" race regression (bug 4/5, 2026-09-07)',
+      () async {
+        // Nothing written yet, mirroring the state right after wipeAll().
+        householdId = null;
+        when(() => syncMetaDao.anyStoredHouseholdId())
+            .thenAnswer((_) async => null);
+
+        engine = SyncEngine(
+          client: client,
+          connectivity: connectivity,
+          outboxProcessor: outboxProcessor,
+          pullService: pullService,
+          realtimeListener: realtimeListener,
+          recurringPostingEngine: recurringPostingEngine,
+          outboxDao: outboxDao,
+          syncMetaDao: syncMetaDao,
+          publish: published.add,
+          getHouseholdId: () async => householdId,
+          refreshOwnProfile: () async {
+            refreshOwnProfileCalls++;
+            // Simulates the real getHouseholdId's direct Drift read seeing
+            // the row refreshOwnProfile itself just wrote — as opposed to
+            // the old Riverpod-stream-cached read, which was not guaranteed
+            // to have observed it yet at this point.
+            householdId = 'household-1';
+          },
+          wipeHouseholdData: () async {
+            wipeHouseholdDataCalls++;
+          },
+        );
+
+        await engine.sync();
+
+        verify(() => pullService.pullAll('household-1')).called(1);
+        expect(published.last, isA<SyncIdle>());
+      },
+    );
+
     test('offline never refreshes the profile or checks for a household '
         'change', () async {
       when(() => connectivity.isOnline).thenAnswer((_) async => false);
@@ -325,21 +365,18 @@ void main() {
       },
     );
 
-    test(
-      'after stop(), calling start() again re-arms sync() — regression for '
-      'the Gate M2 bug (2026-09-07) where the app.dart sign-in listener '
-      'only called sync(), leaving every sync a permanent no-op after any '
-      'sign-out→sign-in cycle',
-      () async {
-        engine.start();
-        engine.stop();
+    test('after stop(), calling start() again re-arms sync() — regression for '
+        'the Gate M2 bug (2026-09-07) where the app.dart sign-in listener '
+        'only called sync(), leaving every sync a permanent no-op after any '
+        'sign-out→sign-in cycle', () async {
+      engine.start();
+      engine.stop();
 
-        engine.start();
-        await engine.sync();
+      engine.start();
+      await engine.sync();
 
-        verify(() => outboxProcessor.process()).called(greaterThan(0));
-      },
-    );
+      verify(() => outboxProcessor.process()).called(greaterThan(0));
+    });
 
     test('start() is idempotent — calling it twice arms only one timer/subscription', () async {
       engine.start();

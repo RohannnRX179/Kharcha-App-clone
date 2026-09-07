@@ -3166,3 +3166,62 @@ excludes a null-household profile that `watchAllKnown` includes.
 post-fix, correctly-departed state): relaunched the app built from this
 change on `emulator-5554`, and the Dashboard's "Per member" card now shows
 **"Rupesh"** for his ₹275 Groceries expense instead of "Unknown".
+
+## 2026-09-07 — "Clear local cache and re-download" one-shot race fixed and live-verified
+
+Fixed the last open item from this project's own bug-tracking memory (the
+"bug 4"/"bug 5" numbering split across two entries above and the earlier
+root-cause entry): Settings → Data → "Clear local cache and re-download"
+not completing a full re-sync on its first attempt.
+
+Root cause, precisely: `SyncEngine.sync()`'s `getHouseholdId` callback
+(`lib/data/sync/sync_engine.dart`) was wired to
+`() => ref.read(currentHouseholdIdProvider)` — a **synchronous** read of a
+Riverpod-cached value derived from `currentProfileProvider`'s Drift
+stream (`ref.watch(currentProfileProvider).value?.householdId`). That
+cached value only updates once the underlying Drift stream notices the
+`profiles` table changed and re-emits — a genuine async gap, not merely a
+slow path. Right after `wipeAll()` + `refreshOwnProfile()`'s own write
+inside the same `sync()` call, that gap had not necessarily closed yet, so
+the synchronous read could still observe the pre-wipe/pre-write cached
+`null`, and `sync()` would skip the household-scoped pull entirely on this
+first call — while `SettingsScreen._clearCacheAndResync` still showed
+"Cache cleared and re-synced." regardless. A second, separate "Sync now"
+always worked because by then the stream had caught up.
+
+Fixed by removing the Riverpod-cached read from this one call path
+entirely rather than trying to wait for it: `getHouseholdId` is now
+`Future<String?> Function()`, and the concrete implementation in the
+`syncEngine` provider (`lib/data/sync/sync_engine.dart`) reads straight off
+Drift with a one-shot `profileDao.findById(userId)` query instead of
+`currentHouseholdIdProvider`. Since this runs immediately after
+`refreshOwnProfile()`'s own `await`ed upsert into that same table, there is
+no gap left for it to race — the one-shot read is guaranteed to see
+whatever `refreshOwnProfile()` itself just wrote. `SyncEngine.sync()`
+itself now does `final householdId = await getHouseholdId();` instead of a
+synchronous call. `currentHouseholdIdProvider` is untouched and still used
+everywhere else in the app (UI code has time to react to a stream
+emission naturally; only this one immediately-after-a-write read path had
+the race).
+
+New regression test in `test/unit/sync/sync_engine_test.dart` (the
+`household change` group): a fake `getHouseholdId`/`refreshOwnProfile`
+pair where `refreshOwnProfile` itself mutates the variable
+`getHouseholdId` reads, proving the ordering contract — `getHouseholdId`
+must be awaited *after* `refreshOwnProfile` completes and must observe
+whatever it wrote — rather than merely proving call counts as the
+pre-existing "profile is refreshed before household id is trusted" test
+did. `fvm flutter analyze --fatal-infos` clean; `fvm flutter test` green
+at 529 (up from 528).
+
+**Live-verified** on `emulator-5554` (Vineet/admin) against the real
+Supabase project, rebuilt and relaunched from this fixed code: tapped
+Settings → "Clear local cache and re-download" → confirmed, exactly once,
+with no follow-up "Sync now". Pulled the resulting `kharcha.sqlite`
+(`adb exec-out run-as ... cat app_flutter/kharcha.sqlite`, same technique
+as every prior gate) immediately afterward and confirmed a genuinely
+complete first-attempt re-sync: 2 expenses, 1 income, 4 profiles, 21
+categories, and all 9 `sync_meta` rows populated with the real household
+id and real cursor timestamps — where the pre-fix code left `sync_meta`
+completely empty and 0 expenses after the same single action. No errors
+in `logcat` and no "Profile refresh failed" entries during the run.
