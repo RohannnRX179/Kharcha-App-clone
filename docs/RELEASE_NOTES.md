@@ -1,10 +1,11 @@
 # Release notes
 
-## v2.0.0 build 2 (2026-09-08)
+## v2.0.1 (2026-09-08)
 
-Fixes a packaging bug in build 1 (below) that silently broke sign-in for
-everyone — build 1 was never distributed beyond this repo. If you somehow
-already have build 1, please update.
+Fixes a packaging bug in v2.0.0 (below) that silently broke sign-in for
+everyone — the Android manifest was missing the internet permission, so
+the app could install but could never actually reach the network. v2.0.0
+should not be used; please install v2.0.1 instead.
 
 ## v2.0.0 (2026-09-08)
 
