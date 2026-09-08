@@ -3434,3 +3434,39 @@ every other `AppConfig` value) and a shared `openLegalPage()` helper that
 falls back to the same "not published yet" message when blank. Once the
 user publishes the pages, wiring them up is a one-line addition to
 `config/dev.json` — no code change needed.
+
+## 2026-09-08 — Publishing the legal pages on an isolated `gh-pages` branch, not `/docs` on master
+
+T-M3.1 needs the privacy policy and terms reachable at a public URL.
+GitHub Pages' usual "deploy from a branch" setup offers `master` root or
+`master:/docs` as the source — and `/docs` already holds `PROGRESS.md`
+and `DECISIONS.md`, which are internal build logs full of real household
+member names, a live Supabase project ref, and detailed bug traces. The
+repo itself is already public (confirmed via the GitHub API:
+`"private": false`), so none of that content is secret in an absolute
+sense — but there's a real difference between "technically fetchable by
+someone who goes looking in the repo's raw files" and "rendered as a
+browsable website with its own URL and search-engine visibility." Rather
+than accept that increase in surface area for two files that don't need
+it, created a new orphan branch (`git worktree add --orphan`, so `master`
+was never touched or checked out elsewhere) containing only
+`index.html`/`privacy.html`/`terms.html`/`style.css`/`.nojekyll`, pushed
+as `gh-pages`. GitHub Pages, once pointed at that branch's root, serves
+exactly these three pages and nothing else in the repo.
+
+### Enabling Pages itself was left for the user
+Turning on GitHub Pages for a branch is a repo Settings change — this
+session has no `gh` CLI installed and no GitHub API token, so there's no
+way to flip that toggle non-interactively. Wired everything up to the
+point where it's a single ~10-second manual step (Settings → Pages →
+Source → `gh-pages` / root → Save) rather than attempting it via browser
+automation on the user's own logged-in session unprompted.
+
+### `AppConfig`'s URLs point at the branch's predictable URL ahead of the toggle
+GitHub Pages project-site URLs are deterministic from the username/repo
+(`https://<user>.github.io/<repo>/`), so `config/dev.json` (local,
+gitignored) was updated now with the two expected URLs rather than
+waiting for Pages to actually go live first — until the toggle above is
+flipped, tapping either in-app link just 404s instead of showing "not
+published yet", which is a fine intermediate state and self-resolves the
+moment Pages is enabled, with no further app-side change needed.
