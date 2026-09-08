@@ -60,5 +60,5 @@ for exactly what that does).
 This is a hobby project, not a commercial product, and isn't a scam —
 see the [Privacy Policy](https://vineet2102.github.io/Kharcha-App/privacy.html)
 and [Terms of Use](https://vineet2102.github.io/Kharcha-App/terms.html)
-for the full detail, or contact **vineetiimabc@gmail.com** with anything
+for the full detail, or contact **vineetrpanicker2002@gmail.com** with anything
 else.

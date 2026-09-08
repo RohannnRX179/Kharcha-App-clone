@@ -76,4 +76,4 @@ to do it for you.
 ## Contact
 
 Questions about this policy, or about your data, can be sent to
-**vineetiimabc@gmail.com**.
+**vineetrpanicker2002@gmail.com**.

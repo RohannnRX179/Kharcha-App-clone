@@ -53,4 +53,4 @@ after a change means you accept the update.
 
 ## Contact
 
-Questions about these terms can be sent to **vineetiimabc@gmail.com**.
+Questions about these terms can be sent to **vineetrpanicker2002@gmail.com**.
