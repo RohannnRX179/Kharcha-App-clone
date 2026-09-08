@@ -3470,3 +3470,85 @@ waiting for Pages to actually go live first — until the toggle above is
 flipped, tapping either in-app link just 404s instead of showing "not
 published yet", which is a fine intermediate state and self-resolves the
 moment Pages is enabled, with no further app-side change needed.
+
+**Update, 2026-09-08**: user flipped the toggle; `curl` confirmed all
+three pages (`/`, `/privacy.html`, `/terms.html`) return HTTP 200. T-M3.1
+is fully closed.
+
+## 2026-09-08 — T-16.1 / T-M3.10: Android release signing, brought forward from Phase 16
+
+### Why a Phase-16 task landed during Phase M3
+T-M3.10's own acceptance line ("the in-app update banner links to a
+*working download*") is meaningless without an actual installable,
+signed APK to point it at — but the formal keystore/signing task is
+T-16.1, in the phase *after* M3 in the spec's stated build order
+(M1→M2→M3→16→17). Rather than publish a hollow `app_releases` row with
+no real download, T-16.1's keystore and signing-config work was pulled
+forward and done now, with the user's explicit go-ahead (this is the
+project's first real public-distribution action, not a reversible one).
+The rest of Phase 16 (app icon, iOS signing, the 5-device install
+checklist) was **not** pulled forward — only the one piece T-M3.10
+structurally depends on.
+
+### Keystore generation was non-interactive, not the spec's literal `keytool` prompt flow
+Spec §16.1 shows `keytool -genkey -v ...` answered interactively. An
+agent session has no interactive terminal, so the DN and both passwords
+were supplied via flags instead (`-dname`, `-storepass`/`-keypass`,
+random 24-char passwords generated with `openssl rand`). Functionally
+identical output — same alias (`kharcha`), same validity (10,000 days).
+One real behavioural difference discovered: modern `keytool` defaults to
+a **PKCS12** keystore, which requires the store password and key
+password to be identical (`Warning: Different store and key passwords
+not supported for PKCS12 KeyStores. Ignoring user-specified -keypass
+value.`) — the spec's `key.properties` template shows them as two
+separate values, but they're the same string here. Stored at
+`~/kharcha-upload-keystore.jks` (outside the repo entirely, matching
+spec's own example path) — `key.properties`/`*.jks` were already
+gitignored from Phase 0. The user copied the file to their own backup
+location and saved the password before this was tagged; the passwords
+were shown once in the session, never committed anywhere.
+
+### `isMinifyEnabled`/`isShrinkResources` needed proguard-rules.pro for `flutter_local_notifications`
+Spec §16.1 explicitly asks for R8 minification/shrinking on the release
+build type, which `android/app/build.gradle.kts` didn't have (release
+was signing with the debug config and otherwise unmodified since Phase
+0). Added a `proguard-rules.pro` keeping `flutter_local_notifications`'s
+own classes plus Gson's reflection-based (de)serialization it depends on
+to restore scheduled alarms after a reboot — R8 renaming those classes
+would silently break the daily-reminder/budget-alert scheduling in a way
+no unit test would catch. Verified live rather than trusted blind: built
+the signed+shrunk release APK, force-uninstalled the differently-signed
+debug build already on `kharcha_test` (required — Android refuses to
+install over a different signature) via a fresh `adb install`, and
+confirmed it launches cleanly to the real Login screen against
+`config/prod.json` with no crash — the minify/shrink pass didn't strip
+anything the boot path needs.
+
+### `config/prod.json` points at the same Supabase project as `config/dev.json`
+There has only ever been one Supabase project this entire build (`ap-
+south-1`, ref `jqorwgiowfxxgjvayznj`) — spec's dev/prod split is a
+convention for *builds*, not separate backends. `config/prod.json`
+(gitignored, same as `dev.json`) carries `APP_ENV: "prod"` and the exact
+same URL/anon key, plus the two legal-page URLs `config/dev.json`
+already had (dev.json's copy predates this and was already correct).
+
+### `release.yml` was missing the legal-page dart-defines
+T-15.6 wrote `.github/workflows/release.yml` in Phase 15, before T-M3.6
+introduced `PRIVACY_POLICY_URL`/`TERMS_URL` in Phase M3 — the workflow's
+own `config/prod.json` heredoc never got the memo, so a CI-built release
+APK would have shipped with both legal links silently blank. Fixed by
+hardcoding the two URLs directly into the workflow (they're public
+GitHub Pages URLs already, not secrets — no new GitHub secret needed).
+Also pointed `softprops/action-gh-release`'s `body_path` at the new
+`docs/RELEASE_NOTES.md` so the GitHub Release description isn't blank;
+this file only holds one version's notes today; each future release will
+need this reconsidered (either trim to the new section only, or accept
+the whole file as the body).
+
+### GitHub Actions secrets were set by the user, not this session
+`gh secret set` (writing the keystore/passwords/Supabase config into the
+repo's encrypted Actions secrets) was blocked by the auto-mode safety
+classifier as too sensitive an action for an agent to take unprompted.
+The exact command block was handed to the user to run themselves in
+their own terminal instead — same category of deliberate hand-off as
+every prior Supabase-token/credential step this project has used.
