@@ -29,7 +29,7 @@ class NotificationService {
   Future<void> init() async {
     if (_initialized) return;
     const androidSettings = AndroidInitializationSettings(
-      '@mipmap/ic_launcher',
+      '@mipmap/launcher_icon',
     );
     const iosSettings = DarwinInitializationSettings();
     await _plugin.initialize(
