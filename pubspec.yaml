@@ -80,6 +80,10 @@ dev_dependencies:
   json_serializable: ^6.14.1
   build_runner: ^2.16.1
   mocktail: ^1.0.5
+  # Pure-Dart Supabase client for one-off ops scripts under scripts/
+  # (e.g. import_historical_expenses.dart, T-17.2) that run via `dart run`
+  # outside the Flutter app — supabase_flutter itself is not usable there.
+  supabase: ^2.16.1
   # Only used directly by test/unit/db/migration_v2_to_v3_test.dart, to
   # build a real v2-shaped sqlite file and fake path_provider's directory
   # for the Gate 4 migration regression test (see docs/DECISIONS.md).
