@@ -1,4 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The debug/profile manifest overlays add this automatically for dev
+         tooling (hot reload, breakpoints) but a release build only merges
+         this `main` manifest, so it must be declared here too — every
+         network call the app makes (Supabase auth/sync/etc.) needs it.
+         Missing until 2026-09-08: no release build had ever been tested
+         before T-16.1, so this went unnoticed through every prior gate. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <!-- Required on Android 13+ to show local notifications (spec §11.12,
          D6, brought forward for Phase 8's budget alerts). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>

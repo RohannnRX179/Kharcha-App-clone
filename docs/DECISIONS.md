@@ -3591,3 +3591,61 @@ short succession raised its estimate of risk. Not investigated further
 since the underlying mechanism (F-14's build-number comparison) already
 has direct unit-test coverage from T-14.6 — this is a live-verification
 gap, not an unverified code path.
+
+## 2026-09-08 — Two real bugs found live-testing the published v2.0.0 release build (M3)
+
+### Critical: the release APK could not sign in at all — missing `INTERNET` permission
+Live-testing M3's feedback/liveness/legal-link features needed a real
+signed-in session on the actual published release APK (not a debug
+`flutter run`) for the first time ever in this project's history. Every
+sign-in attempt failed with the generic "Something went wrong" — never
+the specific "incorrect password" or "offline" copy `AuthRepository`/
+`ErrorMapper` have dedicated branches for. A direct `curl` against the
+real GoTrue token endpoint with the same credentials returned `200` with
+a valid session, ruling out the account/backend/credentials. Rebuilding
+with `isMinifyEnabled`/`isShrinkResources` temporarily forced `false`
+(to rule out R8 stripping something `flutter_secure_storage`/
+`shared_preferences` needed) reproduced the exact same failure —
+ruling out R8 entirely. That left only one real variable: this was the
+first time *any* release-type build (`assembleRelease`) had ever been
+installed and used against the network — every prior gate in this
+project's entire history, back to Phase 0, used `flutter run` (debug)
+or `flutter run --release` on a device already holding the debug
+manifest's permissions merged in from a previous debug install.
+Root cause, found by inspecting the manifest overlays directly:
+`android/app/src/main/AndroidManifest.xml` (the one a release build
+actually ships) has never declared `android.permission.INTERNET` —
+only `android/app/src/debug/AndroidManifest.xml` and `.../profile/...`
+have it, which is Flutter's own template default (added there
+specifically "for development" tooling — hot reload, breakpoints — with
+the implicit assumption that a real app adds it to `main` itself for
+its own actual networking, which nothing in Phases 0–M3 ever did,
+because nothing had tried a release build until now). Fixed by adding
+the permission to `android/app/src/main/AndroidManifest.xml`. Confirmed
+live: rebuilt the exact same signed+minified+shrunk release APK,
+installed fresh, and the same credentials that failed every time before
+now sign in cleanly to a real Dashboard with live household data.
+**This means the v2.0.0 GitHub Release published earlier today was
+fundamentally broken — installable, but unable to sign in at all** —
+this fix must be shipped as a new tagged release before anyone uses the
+existing download link. See T-M3.10 (follow-up) for the re-release.
+
+### D21/T-M3.4 liveness ping never fires for "sign in during the app's first foreground session"
+Found immediately after fixing the above and finally getting a real
+signed-in session to test with: `profiles.last_seen_at` stayed `NULL`
+through a real, successful sign-in. Root cause: `touchActivityIfDue()`
+(`household_repository.dart`) is only called from two places in
+`app.dart` — `initState` (a no-op at boot for a signed-out cold start,
+by design) and `didChangeAppLifecycleState`'s `resumed` branch (only
+fires on an actual background→foreground transition). Neither covers
+signing in and continuing to use the app within the same, first,
+uninterrupted foreground session — the single most common real-world
+path for a brand-new user. Fixed by also calling
+`touchActivityIfDue()` from the existing `ref.listen(currentSessionProvider,
+...)` sign-in-transition listener (`app.dart`, already used to re-arm
+`SyncEngine` on sign-in per the T-M2.7-era fix) — `touchActivityIfDue()`
+is idempotent/throttled internally, so calling it from a third site adds
+no risk of over-firing. Confirmed live: relaunching post-fix and
+signing in populated `last_seen_at` with a fresh timestamp immediately,
+no background/foreground cycle needed. `fvm flutter analyze
+--fatal-infos` clean; `fvm flutter test` green at 540.

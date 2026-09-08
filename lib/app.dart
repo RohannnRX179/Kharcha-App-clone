@@ -163,6 +163,14 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
         final engine = ref.read(syncEngineProvider);
         engine.start();
         engine.sync();
+        // D21/T-M3.4: `initState`'s boot-time liveness ping (above) is a
+        // no-op for a signed-out cold start, and `didChangeAppLifecycleState`
+        // only fires on a background→foreground transition — neither covers
+        // signing in during the app's very first foreground session, so
+        // that case would otherwise never get a first ping until the app is
+        // backgrounded and resumed at least once. Caught live 2026-09-08:
+        // `profiles.last_seen_at` stayed NULL through a real sign-in.
+        ref.read(householdRepositoryProvider).touchActivityIfDue();
       }
     });
 
