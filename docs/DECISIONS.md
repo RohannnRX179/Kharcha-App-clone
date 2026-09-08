@@ -3988,3 +3988,46 @@ trade-off for the PDF export ("no images... keeps the file small"); full
 disaster recovery of receipt images would need a separate Storage-level
 backup, which is out of scope for T-17.3's own acceptance line (it's
 about the *data*, not the photos).
+
+## 2026-09-08 — T-17.1 addendum: worked from the wrong spec file, caught after the fact
+
+This session's Phase 17 work (T-17.1/T-17.2/T-17.3 above) was scoped by
+reading `docs/SPEC.md` — the tracked-in-git spec — which is still **v1.0**
+text (dated 2026-09-03, single-household). The project's actual current
+spec is `KHARCHA_SPEC.md` at the repo root, **v2.0** (2026-09-06,
+multi-household), deliberately gitignored as the owner's private working
+document (`.gitignore`: "Project spec (private)") rather than replacing
+`docs/SPEC.md` in the repo. Earlier sessions clearly worked from
+`KHARCHA_SPEC.md` correctly (it's cited by line number for D17 in T-M2.9's
+own PROGRESS.md row, and Phase 16's amendments — T-16.5 replaced by the
+ring model, T-16.6 extended, T-16.7 superseded — were all followed
+correctly despite `docs/SPEC.md` never being updated to say so). This
+session didn't check for it and only found the mismatch when the user
+asked "have you updated all the docs?", which prompted a re-check against
+every doc in the project — including files outside `docs/`.
+
+`KHARCHA_SPEC.md`'s §17.M4 ("Amendments to Phases 16 and 17 `[v2.0]`")
+extends T-17.1: re-run **both** §7.1 (the 8-test single-household
+checklist — what this session actually ran) **and** §7.2 (the 16-test
+cross-tenant MT-1..16 checklist, T-M1.10's original suite) against
+**production data with at least two real households**. Production
+currently has exactly one real household ("Panicker Family") — checked
+live via `select count(*) from public.households` immediately after this
+was found. The §7.2 half genuinely cannot be run against production yet;
+fabricating a second "real" household would defeat the point of the
+amendment (it specifically wants proof against real, independently-owned
+data, which is exactly what distinguishes it from T-M1.10's already-passed
+test-household run). T-17.1's PROGRESS.md row has been corrected from
+"done" to "partial — §7.1 half only" rather than left overstated.
+
+No other part of this session's Phase 17 work needed correction against
+`KHARCHA_SPEC.md`: T-17.2's entry there ("unchanged for your own
+household; not applicable to friends'") matches what was actually built,
+and T-17.3 isn't listed in §17.M4's amendment table at all (unchanged from
+v1.0).
+
+**Going forward**: when working from "the spec" on this project, check
+for `KHARCHA_SPEC.md` at the repo root first — it is the living document,
+and its amendment sections (search for `[v2.0]`) override the matching
+section number in `docs/SPEC.md`, which is frozen v1.0 text kept for
+historical reference, not maintained.
