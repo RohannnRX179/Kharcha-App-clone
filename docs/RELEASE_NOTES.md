@@ -1,5 +1,11 @@
 # Release notes
 
+## v2.0.0 build 2 (2026-09-08)
+
+Fixes a packaging bug in build 1 (below) that silently broke sign-in for
+everyone — build 1 was never distributed beyond this repo. If you somehow
+already have build 1, please update.
+
 ## v2.0.0 (2026-09-08)
 
 The first release anyone outside the Panicker family can install and use on
