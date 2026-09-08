@@ -5,6 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/db/database_provider.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/legal_links.dart';
 import '../../../data/repositories/household_repository.dart';
 import '../../../data/repositories/profile_repository.dart';
@@ -40,6 +41,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
             child: const Text('Sign out'),
           ),
         ],
@@ -74,6 +76,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
             child: const Text('Clear & re-download'),
           ),
         ],
@@ -118,146 +121,230 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: Opacity(
           opacity: _busy ? 0.6 : 1,
           child: ListView(
+            padding: const EdgeInsets.only(bottom: 100),
             children: [
+              // ── Profile ───────────────────────────
               _SectionHeader('Profile'),
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-                title: Text(profile?.displayName ?? 'Profile'),
-                subtitle: Text(profile?.isAdmin == true ? 'Admin' : 'Member'),
+              _SettingsTile(
+                icon: Icons.person_outline_rounded,
+                iconColor: AppColors.neonCyan,
+                title: profile?.displayName ?? 'Profile',
+                subtitle: profile?.isAdmin == true ? 'Admin' : 'Member',
                 onTap: profile == null
                     ? null
                     : () => showEditProfileSheet(context, profile),
               ),
-              ListTile(
-                leading: const Icon(Icons.lock_outline),
-                title: const Text('Change password'),
+              _SettingsTile(
+                icon: Icons.lock_outline_rounded,
+                iconColor: AppColors.neonPurple,
+                title: 'Change password',
                 onTap: () => showChangePasswordDialog(context),
               ),
-              ListTile(
-                leading: const Icon(Icons.logout),
-                title: const Text('Sign out'),
+              _SettingsTile(
+                icon: Icons.logout_rounded,
+                iconColor: AppColors.danger,
+                title: 'Sign out',
                 onTap: _confirmSignOut,
               ),
-              const Divider(),
+              const _SettingsDivider(),
+
+              // ── Household ─────────────────────────
               _SectionHeader('Household'),
-              ListTile(
-                leading: const Icon(Icons.home_outlined),
-                title: Text(household?.name ?? '—'),
-                subtitle: const Text('Household'),
+              _SettingsTile(
+                icon: Icons.home_outlined,
+                iconColor: AppColors.neonMint,
+                title: household?.name ?? '—',
+                subtitle: 'Household',
                 onTap: () => context.push(AppRoutes.household),
               ),
-              const ListTile(
-                leading: Icon(Icons.currency_rupee),
-                title: Text('Currency'),
-                subtitle: Text('INR (₹)'),
+              _SettingsTile(
+                icon: Icons.currency_rupee_rounded,
+                iconColor: AppColors.neonAmber,
+                title: 'Currency',
+                subtitle: 'INR (₹)',
               ),
-              const Divider(),
+              const _SettingsDivider(),
+
+              // ── Manage ────────────────────────────
               _SectionHeader('Manage'),
-              ListTile(
-                leading: const Icon(Icons.category_outlined),
-                title: const Text('Categories'),
+              _SettingsTile(
+                icon: Icons.category_outlined,
+                iconColor: AppColors.neonPink,
+                title: 'Categories',
                 onTap: () => context.push(AppRoutes.categories),
               ),
-              ListTile(
-                leading: const Icon(Icons.account_balance_wallet_outlined),
-                title: const Text('Payment methods'),
+              _SettingsTile(
+                icon: Icons.account_balance_wallet_outlined,
+                iconColor: AppColors.neonCyan,
+                title: 'Payment methods',
                 onTap: () => context.push(AppRoutes.paymentMethods),
               ),
-              ListTile(
-                leading: const Icon(Icons.attach_money_outlined),
-                title: const Text('Income'),
+              _SettingsTile(
+                icon: Icons.attach_money_rounded,
+                iconColor: AppColors.neonMint,
+                title: 'Income',
                 onTap: () => context.push(AppRoutes.income),
               ),
-              ListTile(
-                leading: const Icon(Icons.pie_chart_outline),
-                title: const Text('Budgets'),
+              _SettingsTile(
+                icon: Icons.pie_chart_outline_rounded,
+                iconColor: AppColors.neonPurple,
+                title: 'Budgets',
                 onTap: () => context.push(AppRoutes.budgets),
               ),
-              ListTile(
-                leading: const Icon(Icons.repeat),
-                title: const Text('Recurring'),
+              _SettingsTile(
+                icon: Icons.repeat_rounded,
+                iconColor: AppColors.neonAmber,
+                title: 'Recurring',
                 onTap: () => context.push(AppRoutes.recurring),
               ),
-              const Divider(),
+              const _SettingsDivider(),
+
+              // ── Notifications ─────────────────────
               _SectionHeader('Notifications'),
-              ListTile(
-                leading: const Icon(Icons.notifications_outlined),
-                title: const Text('Notifications'),
+              _SettingsTile(
+                icon: Icons.notifications_outlined,
+                iconColor: AppColors.neonCyan,
+                title: 'Notifications',
                 onTap: () => context.push(AppRoutes.notificationSettings),
               ),
-              const Divider(),
+              const _SettingsDivider(),
+
+              // ── Feedback ──────────────────────────
               _SectionHeader('Feedback'),
-              ListTile(
-                leading: const Icon(Icons.feedback_outlined),
-                title: const Text('Send feedback'),
+              _SettingsTile(
+                icon: Icons.feedback_outlined,
+                iconColor: AppColors.neonPurple,
+                title: 'Send feedback',
                 onTap: () => context.push(AppRoutes.feedback),
               ),
-              const Divider(),
+              const _SettingsDivider(),
+
+              // ── Data ──────────────────────────────
               _SectionHeader('Data'),
-              ListTile(
-                leading: const Icon(Icons.ios_share),
-                title: const Text('Export'),
+              _SettingsTile(
+                icon: Icons.ios_share_rounded,
+                iconColor: AppColors.neonMint,
+                title: 'Export',
                 onTap: () => context.push(AppRoutes.export),
               ),
-              ListTile(
-                leading: const Icon(Icons.sync),
-                title: const Text('Sync now'),
+              _SettingsTile(
+                icon: Icons.sync_rounded,
+                iconColor: AppColors.neonCyan,
+                title: 'Sync now',
                 onTap: _syncNow,
               ),
-              ListTile(
-                leading: const Icon(Icons.delete_sweep_outlined),
-                title: const Text('Clear local cache and re-download'),
+              _SettingsTile(
+                icon: Icons.delete_sweep_outlined,
+                iconColor: AppColors.danger,
+                title: 'Clear local cache and re-download',
                 onTap: _clearCacheAndResync,
               ),
-              const Divider(),
+              const _SettingsDivider(),
+
+              // ── Account ───────────────────────────
               _SectionHeader('Account'),
-              ListTile(
-                leading: Icon(
-                  Icons.delete_forever_outlined,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                title: Text(
-                  'Delete account',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
+              _SettingsTile(
+                icon: Icons.delete_forever_outlined,
+                iconColor: AppColors.danger,
+                title: 'Delete account',
                 onTap: () => context.push(AppRoutes.account),
               ),
-              const Divider(),
+              const _SettingsDivider(),
+
+              // ── About ─────────────────────────────
               _SectionHeader('About'),
               const _AboutTile(),
-              ListTile(
-                leading: const Icon(Icons.system_update_outlined),
-                title: const Text('Check for updates'),
+              _SettingsTile(
+                icon: Icons.system_update_outlined,
+                iconColor: AppColors.neonMint,
+                title: 'Check for updates',
                 onTap: _checkForUpdates,
               ),
-              ListTile(
-                leading: const Icon(Icons.privacy_tip_outlined),
-                title: const Text('Privacy policy'),
+              _SettingsTile(
+                icon: Icons.privacy_tip_outlined,
+                iconColor: AppColors.neonCyan,
+                title: 'Privacy policy',
                 onTap: () => openLegalPage(
                   context,
                   url: AppConfig.privacyPolicyUrl,
                   label: 'Privacy Policy',
                 ),
               ),
-              ListTile(
-                leading: const Icon(Icons.description_outlined),
-                title: const Text('Terms'),
+              _SettingsTile(
+                icon: Icons.description_outlined,
+                iconColor: AppColors.neonCyan,
+                title: 'Terms',
                 onTap: () => openLegalPage(
                   context,
                   url: AppConfig.termsUrl,
                   label: 'Terms',
                 ),
               ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.bug_report_outlined),
-                title: const Text('Diagnostics'),
+              const _SettingsDivider(),
+
+              // ── Diagnostics ───────────────────────
+              _SettingsTile(
+                icon: Icons.bug_report_outlined,
+                iconColor: AppColors.neonAmber,
+                title: 'Diagnostics',
                 onTap: () => context.push(AppRoutes.diagnostics),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// A settings row with a tinted icon container.
+class _SettingsTile extends StatelessWidget {
+  const _SettingsTile({
+    required this.icon,
+    this.iconColor,
+    required this.title,
+    this.subtitle,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final Color? iconColor;
+  final String title;
+  final String? subtitle;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = iconColor ?? AppColors.textMuted;
+    return ListTile(
+      leading: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, size: 20, color: color),
+      ),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+      ),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle!,
+              style: TextStyle(fontSize: 12, color: AppColors.textSubtle),
+            ),
+      trailing: onTap != null
+          ? const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: AppColors.textSubtle,
+            )
+          : null,
+      onTap: onTap,
     );
   }
 }
@@ -269,12 +356,26 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+    padding: const EdgeInsets.fromLTRB(20, 20, 20, 6),
     child: Text(
-      title,
-      style: Theme.of(context).textTheme.labelLarge
-          ?.copyWith(color: Theme.of(context).colorScheme.primary),
+      title.toUpperCase(),
+      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: AppColors.textSubtle,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.2,
+        fontSize: 11,
+      ),
     ),
+  );
+}
+
+class _SettingsDivider extends StatelessWidget {
+  const _SettingsDivider();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 20),
+    child: Divider(color: AppColors.outline.withValues(alpha: 0.3)),
   );
 }
 
@@ -294,10 +395,11 @@ class _AboutTile extends StatelessWidget {
         final version = info == null
             ? '…'
             : '${info.version} (${info.buildNumber})';
-        return ListTile(
-          leading: const Icon(Icons.info_outline),
-          title: Text('Kharcha $version'),
-          subtitle: Text('Backend: $host'),
+        return _SettingsTile(
+          icon: Icons.info_outline_rounded,
+          iconColor: AppColors.neonPurple,
+          title: 'Kharcha $version',
+          subtitle: 'Backend: $host',
         );
       },
     );

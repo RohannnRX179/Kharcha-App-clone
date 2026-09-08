@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/constants/category_visuals.dart';
 import '../../../core/money/money.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../data/remote/supabase_client_provider.dart';
 import '../../../data/repositories/attachment_repository.dart';
 import '../../../data/repositories/budget_alert_service.dart';
@@ -200,29 +201,35 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 100),
         children: [
           _AmountField(controller: _amountController, errorText: _amountError),
-          const SizedBox(height: 24),
-          Text('Category', style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: 8),
+          const SizedBox(height: 28),
+          _SectionLabel(icon: Icons.category_rounded, label: 'Category'),
+          const SizedBox(height: 10),
           _CategoryChips(
             categories: categories,
             mostUsedIds: _mostUsedCategoryIds,
             selectedId: _categoryId,
             onSelected: (id) => setState(() => _categoryId = id),
           ),
-          const SizedBox(height: 24),
-          Text('Payment method', style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: 8),
+          const SizedBox(height: 28),
+          _SectionLabel(
+            icon: Icons.account_balance_wallet_rounded,
+            label: 'Payment method',
+          ),
+          const SizedBox(height: 10),
           _PaymentMethodChips(
             methods: methods,
             selectedId: _paymentMethodId,
             onSelected: (id) => setState(() => _paymentMethodId = id),
           ),
-          const SizedBox(height: 24),
-          Text('Date & time', style: Theme.of(context).textTheme.labelLarge),
-          const SizedBox(height: 8),
+          const SizedBox(height: 28),
+          _SectionLabel(
+            icon: Icons.calendar_today_rounded,
+            label: 'Date & time',
+          ),
+          const SizedBox(height: 10),
           _DateTimePicker(
             spentAt: _spentAt,
             onChanged: (value) => setState(() => _spentAt = value),
@@ -242,9 +249,9 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
             suggestions: _recentMerchants,
           ),
           if (_isAdmin && profiles.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Text('Paid by', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
+            const SizedBox(height: 28),
+            _SectionLabel(icon: Icons.person_rounded, label: 'Paid by'),
+            const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               children: [
@@ -259,21 +266,38 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
             ),
           ],
           if (widget.id != null) ...[
-            const SizedBox(height: 24),
-            Text('Receipts', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 8),
+            const SizedBox(height: 28),
+            _SectionLabel(icon: Icons.receipt_long_rounded, label: 'Receipts'),
+            const SizedBox(height: 10),
             _ReceiptsSection(expenseId: widget.id!, onAdd: _addReceipt),
           ],
-          const SizedBox(height: 32),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Save'),
+          const SizedBox(height: 36),
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: _saving
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: AppColors.neonMint.withValues(alpha: 0.3),
+                        blurRadius: 16,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+            ),
+            child: FilledButton(
+              onPressed: _saving ? null : _save,
+              child: _saving
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.ink,
+                      ),
+                    )
+                  : const Text('Save'),
+            ),
           ),
         ],
       ),
@@ -497,12 +521,74 @@ class _AmountField extends StatelessWidget {
       controller: controller,
       autofocus: true,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      style: Theme.of(context).textTheme.headlineMedium,
+      style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+        fontWeight: FontWeight.w800,
+        letterSpacing: -1,
+        color: AppColors.text,
+      ),
+      textAlign: TextAlign.center,
       decoration: InputDecoration(
         prefixText: '₹ ',
-        labelText: 'Amount',
+        prefixStyle: TextStyle(
+          fontSize: 28,
+          fontWeight: FontWeight.w600,
+          color: AppColors.neonMint,
+        ),
+        hintText: '0.00',
+        hintStyle: TextStyle(
+          color: AppColors.textSubtle.withValues(alpha: 0.4),
+        ),
         errorText: errorText,
+        filled: true,
+        fillColor: AppColors.surfaceRaised,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(
+            color: AppColors.outline.withValues(alpha: 0.5),
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: BorderSide(
+            color: AppColors.outline.withValues(alpha: 0.5),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(18),
+          borderSide: const BorderSide(color: AppColors.neonMint, width: 1.5),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 24,
+          horizontal: 20,
+        ),
       ),
+    );
+  }
+}
+
+/// A label row with icon + text for form sections.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: AppColors.textSubtle),
+        const SizedBox(width: 8),
+        Text(
+          label.toUpperCase(),
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: AppColors.textSubtle,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.0,
+            fontSize: 11,
+          ),
+        ),
+      ],
     );
   }
 }

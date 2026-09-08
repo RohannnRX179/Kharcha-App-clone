@@ -13,10 +13,10 @@ class AppShell extends StatelessWidget {
 
   static const _labels = ['Dashboard', 'Expenses', 'Analytics', 'Settings'];
   static const _icons = [
-    Icons.dashboard_outlined,
-    Icons.receipt_long_outlined,
-    Icons.bar_chart_outlined,
-    Icons.settings_outlined,
+    Icons.dashboard_rounded,
+    Icons.receipt_long_rounded,
+    Icons.bar_chart_rounded,
+    Icons.settings_rounded,
   ];
 
   @override
@@ -31,54 +31,108 @@ class AppShell extends StatelessWidget {
         ],
       ),
       floatingActionButton: showFab
-          ? GestureDetector(
+          ? _NeonFab(
+              onTap: () => context.push('/expense/new'),
               onLongPress: () => context.push('/income/new'),
-              child: Tooltip(
-                message: 'Add expense (long-press for income)',
-                child: Material(
-                  color: Colors.transparent,
-                  elevation: 5,
-                  shape: const CircleBorder(),
-                  child: Ink(
-                    width: 64,
-                    height: 64,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [AppColors.green, AppColors.greenDeep],
-                      ),
-                    ),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: () => context.push('/expense/new'),
-                      child: const Icon(
-                        Icons.add,
-                        color: AppColors.ink,
-                        size: 30,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
             )
           : null,
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: NavigationBar(
-            selectedIndex: navigationShell.currentIndex,
-            onDestinationSelected: (index) => navigationShell.goBranch(
-              index,
-              initialLocation: index == navigationShell.currentIndex,
-            ),
-            destinations: [
-              for (var i = 0; i < _labels.length; i++)
-                NavigationDestination(icon: Icon(_icons[i]), label: _labels[i]),
+      bottomNavigationBar: _GlassNavigationBar(
+        currentIndex: navigationShell.currentIndex,
+        onTap: (index) => navigationShell.goBranch(
+          index,
+          initialLocation: index == navigationShell.currentIndex,
+        ),
+      ),
+    );
+  }
+}
+
+/// FAB with neon glow effect
+class _NeonFab extends StatelessWidget {
+  const _NeonFab({required this.onTap, required this.onLongPress});
+
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onLongPress: onLongPress,
+      child: Tooltip(
+        message: 'Add expense (long-press for income)',
+        child: Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: AppColors.mintGradient,
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.neonMint.withValues(alpha: 0.4),
+                blurRadius: 20,
+                spreadRadius: 2,
+              ),
+              BoxShadow(
+                color: AppColors.neonCyan.withValues(alpha: 0.15),
+                blurRadius: 30,
+                spreadRadius: 4,
+              ),
             ],
           ),
+          child: Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            child: InkWell(
+              customBorder: const CircleBorder(),
+              onTap: onTap,
+              child: const Icon(
+                Icons.add_rounded,
+                color: AppColors.ink,
+                size: 28,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Glass-effect navigation bar with neon indicator
+class _GlassNavigationBar extends StatelessWidget {
+  const _GlassNavigationBar({required this.currentIndex, required this.onTap});
+
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+
+  static const _labels = AppShell._labels;
+  static const _icons = AppShell._icons;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceRaised,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.outline.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: NavigationBar(
+          selectedIndex: currentIndex,
+          onDestinationSelected: onTap,
+          destinations: [
+            for (var i = 0; i < _labels.length; i++)
+              NavigationDestination(icon: Icon(_icons[i]), label: _labels[i]),
+          ],
         ),
       ),
     );

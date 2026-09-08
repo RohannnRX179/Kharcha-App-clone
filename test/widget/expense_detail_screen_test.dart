@@ -121,6 +121,15 @@ void main() {
     (tester) async {
       stubSignedInAs(auth, ownerId);
 
+      // The redesigned form's large centred amount field pushes Save below
+      // the default 800x600 test viewport, so grow it rather than scroll
+      // between assertions — same fix as settings_screen_test.dart's
+      // pumpSettings.
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
       await tester.pumpWidget(
         ProviderScope(
           overrides: [

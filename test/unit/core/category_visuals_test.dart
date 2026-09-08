@@ -17,11 +17,11 @@ void main() {
 
   group('iconForKey', () {
     test('resolves a known key', () {
-      expect(iconForKey('restaurant'), Icons.restaurant);
+      expect(iconForKey('restaurant'), Icons.restaurant_rounded);
     });
 
     test('falls back to the generic category icon for an unknown key', () {
-      expect(iconForKey('not_a_real_key'), Icons.category);
+      expect(iconForKey('not_a_real_key'), Icons.category_rounded);
     });
   });
 
@@ -34,7 +34,7 @@ void main() {
     test('cash maps to the payments icon', () {
       expect(
         iconForPaymentMethodType(PayMethodType.cash),
-        Icons.payments_outlined,
+        Icons.payments_rounded,
       );
     });
   });

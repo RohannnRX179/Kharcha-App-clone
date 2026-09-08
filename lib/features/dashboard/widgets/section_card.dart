@@ -10,6 +10,7 @@ class SectionCard extends StatelessWidget {
     required this.title,
     required this.child,
     this.onSeeAll,
+    this.accentColor,
     super.key,
   });
 
@@ -17,37 +18,83 @@ class SectionCard extends StatelessWidget {
   final Widget child;
   final VoidCallback? onSeeAll;
 
+  /// Optional left-edge accent colour for visual differentiation.
+  final Color? accentColor;
+
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    return Container(
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [AppColors.surfaceRaised, AppColors.surface],
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.outline),
+        gradient: AppColors.cardGradient,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.outline.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Stack(
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
+            // Subtle top-left glow
+            Positioned(
+              top: -20,
+              left: -20,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      (accentColor ?? AppColors.neonMint).withValues(
+                        alpha: 0.06,
+                      ),
+                      Colors.transparent,
+                    ],
+                  ),
                 ),
-                if (onSeeAll != null)
-                  TextButton(onPressed: onSeeAll, child: const Text('See all')),
-              ],
+              ),
             ),
-            const SizedBox(height: 8),
-            child,
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        title,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.3,
+                            ),
+                      ),
+                      if (onSeeAll != null)
+                        TextButton(
+                          onPressed: onSeeAll,
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.neonCyan,
+                            textStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          child: const Text('See all'),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  child,
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -65,9 +112,18 @@ class EmptySectionBody extends StatelessWidget {
   final String message;
 
   @override
-  Widget build(BuildContext context) => Text(
-    message,
-    style: Theme.of(context).textTheme.bodyMedium
-        ?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Row(
+      children: [
+        Icon(Icons.info_outline_rounded, size: 16, color: AppColors.textSubtle),
+        const SizedBox(width: 8),
+        Text(
+          message,
+          style: Theme.of(context).textTheme.bodyMedium
+              ?.copyWith(color: AppColors.textSubtle),
+        ),
+      ],
+    ),
   );
 }

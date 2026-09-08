@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/category_visuals.dart';
 import '../../../core/money/money.dart';
 import '../../../core/time/app_time.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../data/remote/supabase_client_provider.dart';
 import '../../../data/repositories/category_repository.dart';
 import '../../../data/repositories/expense_repository.dart';
@@ -147,36 +148,63 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
       appBar: AppBar(
         title: const Text('Expenses'),
         actions: [
-          IconButton(
-            icon: Icon(
-              _filter.hasActiveFilters
-                  ? Icons.filter_alt
-                  : Icons.filter_alt_outlined,
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: _filter.hasActiveFilters
+                  ? AppColors.neonMint.withValues(alpha: 0.12)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
             ),
-            onPressed: () => _openFilterSheet(
-              categories: categories,
-              methods: methods,
-              profiles: profiles,
-              currentUserId: currentUserId,
+            child: IconButton(
+              icon: Icon(
+                _filter.hasActiveFilters
+                    ? Icons.filter_alt_rounded
+                    : Icons.filter_alt_outlined,
+                color: _filter.hasActiveFilters
+                    ? AppColors.neonMint
+                    : AppColors.textMuted,
+              ),
+              onPressed: () => _openFilterSheet(
+                categories: categories,
+                methods: methods,
+                profiles: profiles,
+                currentUserId: currentUserId,
+              ),
             ),
           ),
         ],
       ),
       body: Column(
         children: [
+          // Search bar
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
             child: TextField(
               controller: _searchController,
               onChanged: _onSearchChanged,
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  color: AppColors.textMuted,
+                  size: 20,
+                ),
                 hintText: 'Search notes, merchants',
                 isDense: true,
-                border: OutlineInputBorder(),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                    color: AppColors.outline.withValues(alpha: 0.5),
+                  ),
+                ),
               ),
             ),
           ),
+          // Total row
           StreamBuilder<int>(
             stream: repo.watchFilteredTotal(
               householdId: householdId,
@@ -184,18 +212,34 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
             ),
             builder: (context, snapshot) {
               final total = Money(snapshot.data ?? 0);
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              return Container(
+                margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  gradient: AppColors.cardGradient,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.outline.withValues(alpha: 0.3),
+                  ),
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
                       'Total',
-                      style: Theme.of(context).textTheme.labelLarge,
+                      style: Theme.of(context).textTheme.labelLarge
+                          ?.copyWith(color: AppColors.textMuted),
                     ),
                     Text(
                       total.format(),
-                      style: Theme.of(context).textTheme.titleMedium,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.3,
+                        color: AppColors.neonMint,
+                      ),
                     ),
                   ],
                 ),
@@ -204,12 +248,16 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
           ),
           if (_filter.hasActiveFilters)
             Padding(
-              padding: const EdgeInsets.only(bottom: 4),
+              padding: const EdgeInsets.only(left: 8, bottom: 4),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: TextButton(
+                child: TextButton.icon(
                   onPressed: _clearFilters,
-                  child: const Text('Clear filters'),
+                  icon: const Icon(Icons.close_rounded, size: 16),
+                  label: const Text('Clear filters'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.neonCyan,
+                  ),
                 ),
               ),
             ),
@@ -234,6 +282,7 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
                 final groups = _groupByDate(expenses);
                 return ListView.builder(
                   controller: _scrollController,
+                  padding: const EdgeInsets.only(bottom: 100),
                   itemCount: groups.length,
                   itemBuilder: (context, index) {
                     final group = groups[index];
@@ -303,18 +352,32 @@ class _DateGroupSection extends StatelessWidget {
       children: [
         Container(
           width: double.infinity,
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceRaised.withValues(alpha: 0.6),
+            border: Border(
+              bottom: BorderSide(
+                color: AppColors.outline.withValues(alpha: 0.3),
+              ),
+            ),
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 _dateLabel(date),
-                style: Theme.of(context).textTheme.labelLarge,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: AppColors.textMuted,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
+                ),
               ),
               Text(
                 dayTotal.format(),
-                style: Theme.of(context).textTheme.labelLarge,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.2,
+                ),
               ),
             ],
           ),
@@ -360,23 +423,29 @@ class _ExpenseRow extends ConsumerWidget {
     final title = expense.note.isNotEmpty
         ? expense.note
         : (category?.name ?? 'Uncategorised');
+    final catColor = category == null
+        ? Colors.grey
+        : colourFromHex(category!.colourHex);
 
     return Dismissible(
       key: ValueKey(expense.id),
       direction: DismissDirection.horizontal,
       background: Container(
-        color: Theme.of(context).colorScheme.primaryContainer,
+        color: AppColors.neonCyan.withValues(alpha: 0.15),
         alignment: Alignment.centerLeft,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: const Icon(Icons.copy_outlined),
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: const Icon(Icons.copy_outlined, color: AppColors.neonCyan),
       ),
       secondaryBackground: Container(
         color: canEdit
-            ? Theme.of(context).colorScheme.errorContainer
-            : Colors.grey,
+            ? AppColors.danger.withValues(alpha: 0.15)
+            : Colors.grey.withValues(alpha: 0.1),
         alignment: Alignment.centerRight,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: const Icon(Icons.delete_outline),
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Icon(
+          Icons.delete_outline_rounded,
+          color: canEdit ? AppColors.danger : Colors.grey,
+        ),
       ),
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
@@ -396,6 +465,7 @@ class _ExpenseRow extends ConsumerWidget {
               ),
               TextButton(
                 onPressed: () => Navigator.of(context).pop(true),
+                style: TextButton.styleFrom(foregroundColor: AppColors.danger),
                 child: const Text('Delete'),
               ),
             ],
@@ -406,35 +476,77 @@ class _ExpenseRow extends ConsumerWidget {
           ref.read(expenseRepositoryProvider).delete(expense.id),
       child: ListTile(
         onTap: () => context.push(AppRoutes.expenseDetailPath(expense.id)),
-        leading: CircleAvatar(
-          backgroundColor: category == null
-              ? null
-              : colourFromHex(category!.colourHex),
-          foregroundColor: Colors.white,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: catColor.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          alignment: Alignment.center,
           child: Icon(
             category == null ? Icons.category : iconForKey(category!.iconKey),
+            color: catColor,
+            size: 20,
           ),
         ),
-        title: Text(title),
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        ),
         subtitle: Row(
           children: [
             if (payer != null) ...[
-              Text(payer!.displayName),
-              const SizedBox(width: 8),
+              Text(
+                payer!.displayName,
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+              if (method != null) ...[
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Container(
+                    width: 3,
+                    height: 3,
+                    decoration: const BoxDecoration(
+                      color: AppColors.textSubtle,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ],
             ],
             if (method != null)
-              Icon(iconForPaymentMethodType(method!.type), size: 14),
+              Icon(
+                iconForPaymentMethodType(method!.type),
+                size: 13,
+                color: AppColors.textSubtle,
+              ),
           ],
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (expense.isDirty)
-              const Padding(
-                padding: EdgeInsets.only(right: 6),
-                child: Icon(Icons.cloud_off, size: 16),
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Container(
+                  width: 6,
+                  height: 6,
+                  decoration: const BoxDecoration(
+                    color: AppColors.neonAmber,
+                    shape: BoxShape.circle,
+                  ),
+                ),
               ),
-            Text(expense.amount.format()),
+            Text(
+              expense.amount.format(),
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+                letterSpacing: -0.3,
+              ),
+            ),
           ],
         ),
       ),
@@ -451,22 +563,53 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // T-M2.10: a genuinely empty household (no filters applied at
-          // all) reads oddly with filter-specific copy — distinguish it
-          // from "your filters excluded everything".
-          Text(
-            hasFilters
-                ? 'No expenses match these filters.'
-                : 'No expenses yet — tap + to add your first one.',
-          ),
-          if (hasFilters) ...[
-            const SizedBox(height: 8),
-            TextButton(onPressed: onClear, child: const Text('Clear filters')),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64,
+              height: 64,
+              decoration: BoxDecoration(
+                color: AppColors.surfaceBright,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              alignment: Alignment.center,
+              child: Icon(
+                hasFilters
+                    ? Icons.filter_alt_off_outlined
+                    : Icons.receipt_long_outlined,
+                size: 28,
+                color: AppColors.textSubtle,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              hasFilters
+                  ? 'No expenses match these filters.'
+                  : 'No expenses yet',
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(color: AppColors.textMuted),
+            ),
+            if (!hasFilters) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Tap + to add your first one.',
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: AppColors.textSubtle),
+              ),
+            ],
+            if (hasFilters) ...[
+              const SizedBox(height: 12),
+              TextButton.icon(
+                onPressed: onClear,
+                icon: const Icon(Icons.close_rounded, size: 16),
+                label: const Text('Clear filters'),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

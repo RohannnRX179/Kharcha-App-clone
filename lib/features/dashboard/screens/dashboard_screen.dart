@@ -50,24 +50,26 @@ class DashboardScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: MonthSelector(month: month)),
       body: RefreshIndicator(
+        color: AppColors.neonMint,
+        backgroundColor: AppColors.surfaceRaised,
         onRefresh: () => ref.read(syncEngineProvider).sync(),
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
           children: [
             const UpdateBanner(),
             const FeedbackPromptBanner(),
             _HouseholdSummaryCard(monthStart: month),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             _BudgetProgressCard(monthStart: month),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             const _PendingRecurringCard(),
             if (!isSolo) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               _MemberBreakdownCard(monthStart: month),
             ],
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             _TopCategoriesCard(monthStart: month),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             const _RecentActivityCard(),
           ],
         ),
@@ -99,6 +101,7 @@ class _PendingRecurringCard extends ConsumerWidget {
 
     return SectionCard(
       title: 'Pending confirmations',
+      accentColor: AppColors.neonAmber,
       onSeeAll: () => context.push(AppRoutes.recurring),
       child: Column(
         children: [
@@ -138,10 +141,15 @@ class _PendingRecurringRowState extends ConsumerState<_PendingRecurringRow> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.rule.title),
+                Text(
+                  widget.rule.title,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
                 Text(
                   widget.rule.amount.format(),
-                  style: Theme.of(context).textTheme.bodySmall,
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: AppColors.textMuted),
                 ),
               ],
             ),
@@ -155,10 +163,16 @@ class _PendingRecurringRowState extends ConsumerState<_PendingRecurringRow> {
           else ...[
             TextButton(
               onPressed: () => _act(repo.skipPending),
+              style: TextButton.styleFrom(foregroundColor: AppColors.textMuted),
               child: const Text('Skip'),
             ),
+            const SizedBox(width: 6),
             FilledButton(
               onPressed: () => _act(repo.postPending),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 38),
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+              ),
               child: const Text('Post'),
             ),
           ],
@@ -241,36 +255,61 @@ class _SummaryBody extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _SummaryRow(label: 'Spent', value: Money(expenseTotal).format()),
+        _SummaryRow(
+          label: 'Spent',
+          value: Money(expenseTotal).format(),
+          icon: Icons.arrow_upward_rounded,
+          iconColor: AppColors.danger,
+        ),
+        const SizedBox(height: 6),
         _SummaryRow(
           label: 'Income',
           value: Money(incomeTotal).format(),
+          icon: Icons.arrow_downward_rounded,
+          iconColor: AppColors.neonMint,
           onTap: () => context.push(AppRoutes.income),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 10),
+          child: Divider(height: 1),
         ),
         _SummaryRow(
           label: 'Net saved',
           value: net.format(),
-          valueColor: net.isNegative
-              ? Theme.of(context).colorScheme.error
-              : AppColors.green,
+          valueColor: net.isNegative ? AppColors.danger : AppColors.neonMint,
+          isBold: true,
         ),
         if (changePct != null) ...[
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Icon(
-                changePct >= 0 ? Icons.arrow_upward : Icons.arrow_downward,
-                size: 16,
-                color: changePct >= 0
-                    ? Theme.of(context).colorScheme.error
-                    : AppColors.green,
-              ),
-              const SizedBox(width: 4),
-              Text(
-                '${changePct.abs().toStringAsFixed(0)}% vs last month',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: (changePct >= 0 ? AppColors.danger : AppColors.neonMint)
+                  .withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  changePct >= 0
+                      ? Icons.trending_up_rounded
+                      : Icons.trending_down_rounded,
+                  size: 16,
+                  color: changePct >= 0 ? AppColors.danger : AppColors.neonMint,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '${changePct.abs().toStringAsFixed(0)}% vs last month',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: changePct >= 0
+                        ? AppColors.danger
+                        : AppColors.neonMint,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ],
@@ -284,24 +323,53 @@ class _SummaryRow extends StatelessWidget {
     required this.value,
     this.valueColor,
     this.onTap,
+    this.icon,
+    this.iconColor,
+    this.isBold = false,
   });
   final String label;
   final String value;
   final Color? valueColor;
   final VoidCallback? onTap;
+  final IconData? icon;
+  final Color? iconColor;
+  final bool isBold;
 
   @override
   Widget build(BuildContext context) {
     final row = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          if (icon != null) ...[
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: (iconColor ?? AppColors.textMuted).withValues(
+                  alpha: 0.12,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              alignment: Alignment.center,
+              child: Icon(icon, size: 15, color: iconColor),
+            ),
+            const SizedBox(width: 10),
+          ],
+          Expanded(
+            child: Text(
+              label,
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: AppColors.textMuted),
+            ),
+          ),
           Text(
             value,
-            style: Theme.of(context).textTheme.titleMedium
-                ?.copyWith(color: valueColor),
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: valueColor,
+              fontWeight: isBold ? FontWeight.w800 : FontWeight.w600,
+              letterSpacing: -0.3,
+            ),
           ),
         ],
       ),
@@ -334,6 +402,7 @@ class _BudgetProgressCard extends ConsumerWidget {
 
     return SectionCard(
       title: 'Budgets',
+      accentColor: AppColors.neonPurple,
       onSeeAll: () => context.push(AppRoutes.budgets),
       child: Column(
         children: [
@@ -380,34 +449,35 @@ class _BudgetProgressRow extends ConsumerWidget {
             ? Money((status.remainingPaise / daysLeft).round())
             : Money.zero;
         final colour = switch (status.health) {
-          BudgetHealth.ok => Colors.green.shade700,
-          BudgetHealth.warning => Colors.orange.shade800,
-          BudgetHealth.exceeded => Theme.of(context).colorScheme.error,
+          BudgetHealth.ok => AppColors.neonMint,
+          BudgetHealth.warning => AppColors.neonAmber,
+          BudgetHealth.exceeded => AppColors.danger,
         };
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_label),
+                  Text(
+                    _label,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   Text(
                     '${status.spent.format()} / ${status.effectiveBudget.format()}',
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: AppColors.textMuted),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: status.pct.clamp(0, 1).toDouble(),
-                  minHeight: 6,
-                  color: colour,
-                ),
+              const SizedBox(height: 8),
+              _NeonProgressBar(
+                value: status.pct.clamp(0, 1).toDouble(),
+                color: colour,
               ),
-              const SizedBox(height: 2),
+              const SizedBox(height: 6),
               Text(
                 status.health == BudgetHealth.exceeded
                     ? 'Exceeded by ${Money(status.overspendPaise).format()}'
@@ -420,6 +490,44 @@ class _BudgetProgressRow extends ConsumerWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// A styled progress bar with rounded ends and subtle glow.
+class _NeonProgressBar extends StatelessWidget {
+  const _NeonProgressBar({required this.value, required this.color});
+
+  final double value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 8,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceBright,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: FractionallySizedBox(
+        alignment: Alignment.centerLeft,
+        widthFactor: value,
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [color, color.withValues(alpha: 0.7)],
+            ),
+            borderRadius: BorderRadius.circular(4),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.3),
+                blurRadius: 6,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -442,6 +550,7 @@ class _MemberBreakdownCard extends ConsumerWidget {
 
     return SectionCard(
       title: 'Per member',
+      accentColor: AppColors.neonCyan,
       child: StreamBuilder<List<GroupedTotal>>(
         stream: repo.watchExpenseByMember(
           householdId: householdId,
@@ -519,39 +628,56 @@ class _MemberBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final barColor = profile == null
+        ? AppColors.neonMint
+        : colourFromHex(profile!.colourHex);
     return InkWell(
       onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(profile?.displayName ?? 'Unknown'),
+                Text(
+                  profile?.displayName ?? 'Unknown',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
                 Row(
                   children: [
-                    Text(Money(amountPaise).format()),
-                    const SizedBox(width: 6),
                     Text(
-                      '${(fraction * 100).toStringAsFixed(0)}%',
-                      style: Theme.of(context).textTheme.bodySmall,
+                      Money(amountPaise).format(),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: barColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        '${(fraction * 100).toStringAsFixed(0)}%',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: barColor,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ],
                 ),
               ],
             ),
-            const SizedBox(height: 4),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: fraction.clamp(0, 1).toDouble(),
-                minHeight: 6,
-                color: profile == null
-                    ? null
-                    : colourFromHex(profile!.colourHex),
-              ),
+            const SizedBox(height: 6),
+            _NeonProgressBar(
+              value: fraction.clamp(0, 1).toDouble(),
+              color: barColor,
             ),
           ],
         ),
@@ -575,6 +701,7 @@ class _TopCategoriesCard extends ConsumerWidget {
 
     return SectionCard(
       title: 'Top categories',
+      accentColor: AppColors.neonPink,
       onSeeAll: () => context.go(AppRoutes.analytics),
       child: StreamBuilder<int>(
         stream: repo.watchExpenseTotal(
@@ -628,26 +755,54 @@ class _CategoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final catColor = category == null
+        ? Colors.grey
+        : colourFromHex(category!.colourHex);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 14,
-            backgroundColor: category == null
-                ? null
-                : colourFromHex(category!.colourHex),
-            foregroundColor: Colors.white,
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: catColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
             child: Icon(
               category == null ? Icons.category : iconForKey(category!.iconKey),
-              size: 16,
+              size: 18,
+              color: catColor,
             ),
           ),
           const SizedBox(width: 12),
-          Expanded(child: Text(category?.name ?? 'Uncategorised')),
-          Text('${percent.toStringAsFixed(0)}%'),
-          const SizedBox(width: 8),
-          Text(Money(amountPaise).format()),
+          Expanded(
+            child: Text(
+              category?.name ?? 'Uncategorised',
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: catColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              '${percent.toStringAsFixed(0)}%',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: catColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            Money(amountPaise).format(),
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );
@@ -711,21 +866,48 @@ class _RecentExpenseRow extends StatelessWidget {
     final title = expense.note.isNotEmpty
         ? expense.note
         : (category?.name ?? 'Uncategorised');
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      onTap: () => context.push(AppRoutes.expenseDetailPath(expense.id)),
-      leading: CircleAvatar(
-        backgroundColor: category == null
+    final catColor = category == null
+        ? Colors.grey
+        : colourFromHex(category!.colourHex);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        onTap: () => context.push(AppRoutes.expenseDetailPath(expense.id)),
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: catColor.withValues(alpha: 0.15),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            category == null ? Icons.category : iconForKey(category!.iconKey),
+            color: catColor,
+            size: 20,
+          ),
+        ),
+        title: Text(
+          title,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+        ),
+        subtitle: payer == null
             ? null
-            : colourFromHex(category!.colourHex),
-        foregroundColor: Colors.white,
-        child: Icon(
-          category == null ? Icons.category : iconForKey(category!.iconKey),
+            : Text(
+                payer!.displayName,
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
+              ),
+        trailing: Text(
+          expense.amount.format(),
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 15,
+            letterSpacing: -0.3,
+          ),
         ),
       ),
-      title: Text(title),
-      subtitle: payer == null ? null : Text(payer!.displayName),
-      trailing: Text(expense.amount.format()),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/theme/app_theme.dart';
 import '../../../core/time/app_time.dart';
 import '../controllers/selected_month_controller.dart';
 
@@ -23,8 +24,8 @@ class MonthSelector extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          icon: const Icon(Icons.chevron_left),
+        _NavButton(
+          icon: Icons.chevron_left_rounded,
           onPressed: controller.previousMonth,
           tooltip: 'Previous month',
         ),
@@ -37,15 +38,54 @@ class MonthSelector extends ConsumerWidget {
               );
               if (picked != null) controller.setMonth(picked);
             },
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.text,
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.3,
+              ),
+            ),
             child: Text(AppTime.monthLabel(month)),
           ),
         ),
-        IconButton(
-          icon: const Icon(Icons.chevron_right),
+        _NavButton(
+          icon: Icons.chevron_right_rounded,
           onPressed: isCurrentMonth ? null : controller.nextMonth,
           tooltip: 'Next month',
         ),
       ],
+    );
+  }
+}
+
+class _NavButton extends StatelessWidget {
+  const _NavButton({
+    required this.icon,
+    required this.onPressed,
+    required this.tooltip,
+  });
+
+  final IconData icon;
+  final VoidCallback? onPressed;
+  final String tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 34,
+      height: 34,
+      decoration: BoxDecoration(
+        color: onPressed != null ? AppColors.surfaceBright : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: IconButton(
+        icon: Icon(icon, size: 20),
+        onPressed: onPressed,
+        tooltip: tooltip,
+        padding: EdgeInsets.zero,
+        color: onPressed != null ? AppColors.text : AppColors.textSubtle,
+      ),
     );
   }
 }
@@ -68,14 +108,19 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
       title: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left),
+          _NavButton(
+            icon: Icons.chevron_left_rounded,
             onPressed: () => setState(() => _year--),
+            tooltip: 'Previous year',
           ),
-          Text('$_year'),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
+          Text(
+            '$_year',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+          ),
+          _NavButton(
+            icon: Icons.chevron_right_rounded,
             onPressed: canGoForward ? () => setState(() => _year++) : null,
+            tooltip: 'Next year',
           ),
         ],
       ),
@@ -85,6 +130,8 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
           crossAxisCount: 3,
           shrinkWrap: true,
           childAspectRatio: 2,
+          mainAxisSpacing: 6,
+          crossAxisSpacing: 6,
           children: [
             for (var m = 1; m <= 12; m++) _MonthCell(year: _year, month: m),
           ],
@@ -109,9 +156,32 @@ class _MonthCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final value = DateTime.utc(year, month);
     final disabled = AppTime.isFutureMonth(value);
-    return TextButton(
-      onPressed: disabled ? null : () => Navigator.of(context).pop(value),
-      child: Text(AppTime.monthLabelShort(value).split(' ').first),
+    final isCurrent = AppTime.isSameIstMonth(value, DateTime.now().toUtc());
+    return Container(
+      decoration: isCurrent
+          ? BoxDecoration(
+              color: AppColors.neonMint.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: AppColors.neonMint.withValues(alpha: 0.3),
+              ),
+            )
+          : null,
+      child: TextButton(
+        onPressed: disabled ? null : () => Navigator.of(context).pop(value),
+        style: TextButton.styleFrom(
+          foregroundColor: isCurrent ? AppColors.neonMint : AppColors.text,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        child: Text(
+          AppTime.monthLabelShort(value).split(' ').first,
+          style: TextStyle(
+            fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
+      ),
     );
   }
 }

@@ -105,8 +105,8 @@ void main() {
     ]) {
       // At least one, not exactly one: "Notifications" is both a section
       // header and that section's own (only) nav tile — both render the
-      // literal text.
-      expect(find.text(section), findsAtLeastNWidgets(1));
+      // literal text. Section headers render upper-cased.
+      expect(find.text(section.toUpperCase()), findsAtLeastNWidgets(1));
     }
     expect(find.text('Diagnostics'), findsOneWidget);
 
