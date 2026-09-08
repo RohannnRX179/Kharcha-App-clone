@@ -3669,3 +3669,128 @@ plain `curl`, confirmed its signature via `apksigner verify` matches the
 real keystore, installed that exact file fresh on the emulator, and
 signed in successfully — closing the loop from "GitHub Release exists"
 to "the thing a real person downloads actually works."
+
+## 2026-09-08 — T-M3.9 attempt: first-ever real physical Android device
+
+First live test on genuine physical hardware rather than an emulator — a
+real Samsung Galaxy M56 (`SM_E566B`, One UI, Android 16/API 36) connected
+via USB with `fvm flutter run -d RZGYC20MQKV --dart-define-from-file=config/dev.json`
+(debug build, real Supabase project). Build/install/launch worked cleanly
+on the first try, no codesign/toolchain issues (this is the Android side —
+the iOS `com.apple.provenance` saga from Gate 0/the ad hoc iOS entry
+doesn't apply here).
+
+### Real Supabase default-SMTP rate limit hit live, for real
+
+Attempting T-M2.13/`docs/TESTING_M2.md`'s "sign up with real email
+confirmation" section (a fresh throwaway account) hit
+`over_email_send_rate_limit`/`over_request_rate_limit`
+("Too many attempts. Try again in a few minutes.", the exact copy from
+T-M2.4's `ErrorMapper`) after only 2-3 sign-up/resend attempts across
+~10 minutes — and it was **still active roughly 30 minutes later**, well
+past what the app's own generic copy implies. This is the first live
+confirmation of T-M1.9's already-documented gap (no custom SMTP; the
+project is still on Supabase's default, low-volume-oriented mailer) —
+worth remembering the cooldown appears to reset/extend on every retry
+rather than counting down from the first attempt, so mashing "resend" or
+re-attempting sign-up during the window makes it worse, not better.
+**Practical effect on this session**: `docs/TESTING_M2.md` sections 1-7
+(sign-up-with-real-confirmation through leave/rejoin/remove/delete) could
+not be run this session — deferred to a session where the rate limit has
+had a longer, untouched cooldown (try after a few hours or the next day,
+and don't retry more than once). One harmless side effect: a throwaway,
+never-confirmed auth user now exists under the user's **bare** real email
+(`[redacted]@gmail.com`, no `+alias`) from the first attempt
+(before switching to the `+kharchatest1@gmail.com` alias convention for
+every attempt after) — unconfirmed, no data, safe to ignore or delete via
+the Supabase dashboard's Authentication → Users list later.
+
+### T-M3.9 (daily reminder on a real device): alarm fires, notification never posts — real bug, not fixed
+
+While waiting out the rate limit, tested T-M3.9 instead (Gate 13's own
+outstanding item: "confirm the daily reminder actually fires on a
+physical Android device" — never possible before, every prior attempt
+was on an emulator whose alarm-dispatch throttling made the result
+ambiguous). Signed in with the real Vineet/admin account (no test data
+added — this only needed the Notification settings screen), set the
+daily reminder to a time 1-2 minutes out, backgrounded the app via the
+home button (not swiped from recents), and waited.
+
+**Confirmed via `adb shell dumpsys alarm`**: the `RTC_WAKEUP` alarm was
+registered correctly (`OW=2026-09-08 08:53:00.000`, an inexact
+~73-second delivery window per `AndroidScheduleMode.inexactAllowWhileIdle`)
+and genuinely **delivered** — both the alarm's own delivery-history entry
+and a matching `ActivityManager: Received BROADCAST intent ...
+cmp=com.panicker.kharcha/com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver
+requestCode=900001` log line appear at 08:54:13, ~73s after the target
+(the expected inexact-alarm delay, not a problem). **But no notification
+ever posted**: `adb shell dumpsys notification --noredact` showed no
+`id=900001` entry anywhere, and — more tellingly — **no `daily_reminder`
+Android notification channel was ever created at all**, on this or a
+second attempt a few minutes later. (`monthly_summary`, the one
+notification type that _did_ fire successfully this session via
+`NotificationService.show()`'s immediate path, has its channel present
+and correct — ruling out a blanket permission problem; `POST_NOTIFICATIONS`
+is genuinely granted.)
+
+Read `ScheduledNotificationReceiver.java` (pinned
+`flutter_local_notifications` 22.3.0, in `~/.pub-cache`) to confirm the
+plugin's actual architecture: for this version, the full notification
+payload travels as a JSON string in the broadcast Intent's own extra
+(`FlutterLocalNotificationsPlugin.NOTIFICATION_DETAILS`) — `onReceive()`
+just deserializes it and calls `showNotification()`/`scheduleNextNotification()`
+synchronously, no Dart engine, no persisted lookup-by-id, no async work.
+Given that, if `onReceive()` ran at all, the notification would post
+immediately — there's no code path for "ran but silently produced
+nothing." Combined with zero logcat trace of the app's own pid (28767 at
+the time) doing anything in the seconds after the broadcast was
+dispatched (checked both attempts, full unfiltered logcat), the most
+likely explanation is that **`onReceive()` never actually executed** —
+the broadcast was dispatched by `ActivityManager` (hence the log line)
+but something in One UI's background-execution layer dropped it before
+delivery, with no trace of why.
+
+**Two known Samsung mechanisms were checked and ruled out as the sole
+cause, in order**:
+1. Standard Android Doze whitelist (`dumpsys deviceidle whitelist`) —
+   Kharcha was genuinely absent. Fixed live via Settings → Apps →
+   Kharcha → Battery → **Unrestricted** (confirmed via a second
+   `dumpsys deviceidle whitelist` read showing `user,com.panicker.kharcha,10444`
+   afterward) — but the retest with this fix in place **still failed
+   identically** (alarm delivered at 09:03:26, still no notification,
+   still no channel).
+2. Samsung's separate Device Care "Sleeping apps"/"Deep sleeping apps"
+   lists (Settings → Battery and device care → Background usage limits)
+   — user confirmed Kharcha was in neither.
+3. Samsung's newer "Auto Blocker" security feature (can restrict
+   background behavior for apps installed outside the Play Store,
+   which includes anything sideloaded via ADB) — user confirmed it's
+   off on this device.
+
+**Not fixed this session, root cause not conclusively identified** —
+every mechanism this project's own `INSTALL.md` (T-M3.7) and general
+Android knowledge anticipated has now been checked and ruled out
+individually, which is itself useful: the remaining suspects are
+something less commonly documented (a fourth One UI power-management
+layer not yet identified, or something specific to how this exact
+receiver/PendingIntent combination interacts with a debug-mode `flutter
+run` install specifically — not yet tested against a signed release
+build on this device, which is a natural next thing to try). Recorded
+here rather than guessed at further per the user's decision to end the
+session at this point. **Gate 13 stays `partial`** — this is the first
+real physical-device attempt and it surfaced a genuine, reproducible
+failure rather than confirming a pass, which is strictly more informative
+than the emulator-throttling ambiguity Gate 13 was stuck on before, but
+doesn't close it.
+
+**Suggested next steps for whoever picks this up**: (a) retest against a
+signed **release** build (`flutter build apk --release`, not `flutter
+run` debug) installed the same way friends will actually get the app,
+since debug-mode installs can have different background-execution
+treatment on some OEM skins; (b) if it still fails, try toggling
+"Optimize battery usage" for the whole device off entirely as a bisection
+step, then re-enable and narrow down; (c) consider whether `flutter_local_notifications`
+has a newer major version with different (more OEM-resilient) delivery
+architecture, matching this project's existing precedent of periodically
+rechecking blocked/deferred upstream dependencies (see `custom_lint`/
+`riverpod_lint` in the Phase 0 entry).
