@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/constants/category_visuals.dart';
 import '../../../core/money/money.dart';
 import '../../../core/time/app_time.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../data/repositories/category_repository.dart';
 import '../../../data/repositories/payment_method_repository.dart';
 import '../../../data/repositories/profile_repository.dart';
@@ -30,40 +31,47 @@ class AnalyticsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: MonthSelector(month: month)),
       body: RefreshIndicator(
+        color: AppColors.neonMint,
+        backgroundColor: AppColors.surfaceRaised,
         onRefresh: () => ref.read(syncEngineProvider).sync(),
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
           children: [
             SectionCard(
               title: 'Monthly trend',
+              accentColor: AppColors.neonCyan,
               child: _MonthlyTrendChart(endMonth: month),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             SectionCard(
               title: 'Category breakdown',
+              accentColor: AppColors.neonPink,
               child: _CategoryDonutChart(monthStart: month),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             SectionCard(
               title: 'Member comparison',
+              accentColor: AppColors.neonPurple,
               child: _MemberComparisonChart(endMonth: month),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             SectionCard(
               title: 'Payment method split',
+              accentColor: AppColors.neonAmber,
               child: _PaymentMethodSplit(monthStart: month),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             SectionCard(
               title: 'Day-of-week pattern',
+              accentColor: AppColors.neonMint,
               child: _DayOfWeekChart(monthStart: month),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             SectionCard(
               title: 'Top merchants',
               child: _TopMerchantsList(monthStart: month),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             SectionCard(
               title: 'Month-over-month by category',
               child: _MonthOverMonthTable(endMonth: month),
@@ -86,12 +94,26 @@ class _LegendDot extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.4),
+                blurRadius: 4,
+              ),
+            ],
+          ),
         ),
-        const SizedBox(width: 4),
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: AppColors.textMuted,
+          ),
+        ),
       ],
     );
   }
@@ -120,8 +142,8 @@ class _MonthlyTrendChart extends ConsumerWidget {
         );
         if (!hasData) return const EmptySectionBody();
 
-        final colorScheme = Theme.of(context).colorScheme;
-        final incomeColor = Colors.green.shade600;
+        const expenseLineColor = AppColors.neonPink;
+        const incomeColor = AppColors.neonMint;
         var maxValue = 0;
         for (final t in totals) {
           if (t.expensePaise > maxValue) maxValue = t.expensePaise;
@@ -203,10 +225,15 @@ class _MonthlyTrendChart extends ConsumerWidget {
                             totals[i].expensePaise.toDouble(),
                           ),
                       ],
-                      color: colorScheme.error,
+                      color: expenseLineColor,
                       barWidth: 2.5,
-                      isCurved: false,
+                      isCurved: true,
+                      curveSmoothness: 0.25,
                       dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: expenseLineColor.withValues(alpha: 0.08),
+                      ),
                     ),
                     LineChartBarData(
                       spots: [
@@ -218,8 +245,13 @@ class _MonthlyTrendChart extends ConsumerWidget {
                       ],
                       color: incomeColor,
                       barWidth: 2.5,
-                      isCurved: false,
+                      isCurved: true,
+                      curveSmoothness: 0.25,
                       dotData: const FlDotData(show: false),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: incomeColor.withValues(alpha: 0.08),
+                      ),
                     ),
                   ],
                 ),
@@ -230,9 +262,9 @@ class _MonthlyTrendChart extends ConsumerWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _LegendDot(color: colorScheme.error, label: 'Expense'),
+                const _LegendDot(color: expenseLineColor, label: 'Expense'),
                 const SizedBox(width: 16),
-                _LegendDot(color: incomeColor, label: 'Income'),
+                const _LegendDot(color: incomeColor, label: 'Income'),
               ],
             ),
           ],
@@ -632,9 +664,15 @@ class _DayOfWeekChart extends ConsumerWidget {
                     barRods: [
                       BarChartRodData(
                         toY: averages[w]!.toDouble(),
-                        color: Theme.of(context).colorScheme.primary,
+                        gradient: const LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [AppColors.neonMintDeep, AppColors.neonMint],
+                        ),
                         width: 18,
-                        borderRadius: BorderRadius.circular(4),
+                        borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(6),
+                        ),
                       ),
                     ],
                   ),
@@ -789,9 +827,7 @@ class _DeltaCell extends StatelessWidget {
       );
     }
     final pct = (current - previous) / previous * 100;
-    final color = pct > 0
-        ? Theme.of(context).colorScheme.error
-        : Colors.green.shade700;
+    final color = pct > 0 ? AppColors.danger : AppColors.neonMint;
     final sign = pct > 0 ? '+' : '';
     return Text(
       '$sign${pct.toStringAsFixed(0)}%',
