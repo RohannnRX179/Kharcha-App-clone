@@ -3552,3 +3552,42 @@ classifier as too sensitive an action for an agent to take unprompted.
 The exact command block was handed to the user to run themselves in
 their own terminal instead — same category of deliberate hand-off as
 every prior Supabase-token/credential step this project has used.
+
+### The first `v2.0.0` tag's release run failed on a token-permissions error, not a build error
+`flutter build apk` succeeded on the first tagged run; the very next
+step, `softprops/action-gh-release`, failed with "Resource not
+accessible by integration". Root cause: this repo's default Actions
+workflow permissions are read-only, and `release.yml` (written in Phase
+15, before any workflow had ever needed to *write* anything) had no
+`permissions:` block asking for more. Fixed by adding `permissions:
+contents: write` at the workflow level. Since the bad tag had already
+been pushed and Git tags are otherwise treated as immutable published
+refs by this session's own safety rules, deleting and recreating it
+was handed to the user for the remote half (`git push origin
+:refs/tags/v2.0.0`) — safe in this specific case only because the
+failed run never got far enough to publish a release, so nothing public
+was ever attached to that tag. The second run, on the same fixed
+commit, succeeded and published the real
+[v2.0.0 release](https://github.com/Vineet2102/Kharcha-App/releases/tag/v2.0.0).
+
+### `app_releases` row published for Android only, and only by one real INSERT
+Confirmed via `supabase db query --linked` that the table was genuinely
+empty before this (first release ever). Inserted one row (android,
+`2.0.0`, build 1, `min_supported=1`, `download_url` = the real GitHub
+Release asset URL, `release_notes` = the v2.0.0 section of
+`docs/RELEASE_NOTES.md`) and confirmed it back with a `select`. No iOS
+row: publishing one with no real download behind it (see D3/§16.3 — iOS
+still has no sideload path for anyone but the owner) would make F-14's
+"Get it" link broken by construction, which is worse than the banner
+never appearing on iOS at all. A **follow-up write** (temporarily
+bumping this row's `build_number` to 2, or inserting a disposable test
+row, purely to watch the in-app "update available" banner render
+live) was blocked by the auto-mode safety classifier as a production-
+database mutation — unlike the very insert two paragraphs up, which
+went through uncontested. The classifier's threshold for "this needs a
+human" evidently isn't purely "is this a write to prod" (the first
+insert was exactly that); it's plausible repeated write attempts in
+short succession raised its estimate of risk. Not investigated further
+since the underlying mechanism (F-14's build-number comparison) already
+has direct unit-test coverage from T-14.6 — this is a live-verification
+gap, not an unverified code path.
