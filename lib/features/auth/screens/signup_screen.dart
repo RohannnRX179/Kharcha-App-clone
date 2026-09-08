@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/config/app_config.dart';
 import '../../../core/errors/failure.dart';
 import '../../../core/widgets/app_surface.dart';
+import '../../../core/widgets/legal_links.dart';
 import '../../../routing/routes.dart';
 import '../controllers/signup_controller.dart';
 
@@ -50,12 +52,6 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
     if (success && mounted) {
       context.go(AppRoutes.verifyEmail, extra: email);
     }
-  }
-
-  void _showNotPublishedYet(String what) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text("The $what aren't published yet.")));
   }
 
   @override
@@ -202,7 +198,11 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         InkWell(
-                          onTap: () => _showNotPublishedYet('Terms'),
+                          onTap: () => openLegalPage(
+                            context,
+                            url: AppConfig.termsUrl,
+                            label: 'Terms',
+                          ),
                           child: Text(
                             'Terms',
                             style: Theme.of(context).textTheme.bodySmall
@@ -216,7 +216,11 @@ class _SignUpScreenState extends ConsumerState<SignUpScreen> {
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                         InkWell(
-                          onTap: () => _showNotPublishedYet('Privacy Policy'),
+                          onTap: () => openLegalPage(
+                            context,
+                            url: AppConfig.privacyPolicyUrl,
+                            label: 'Privacy Policy',
+                          ),
                           child: Text(
                             'Privacy Policy',
                             style: Theme.of(context).textTheme.bodySmall

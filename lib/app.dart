@@ -10,6 +10,7 @@ import 'core/notifications/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'data/remote/supabase_client_provider.dart';
 import 'data/repositories/budget_alert_service.dart';
+import 'data/repositories/household_repository.dart';
 import 'data/repositories/notification_scheduler.dart';
 import 'data/repositories/profile_repository.dart';
 import 'data/repositories/update_check_repository.dart';
@@ -61,6 +62,13 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
     // `UpdateCheckRepository.checkForUpdates`.
     ref.read(updateCheckControllerProvider.notifier).check();
 
+    // D21/T-M3.4: liveness ping, at most once per hour (the repository's
+    // own throttle) — a harmless no-op if nothing is signed in yet, same
+    // precedent as `engine.sync()` above.
+    if (ref.read(currentSessionProvider) != null) {
+      ref.read(householdRepositoryProvider).touchActivityIfDue();
+    }
+
     // T-13.4: deep-link a tapped notification into its target route. A
     // foreground tap arrives on this stream; a cold-start tap (the
     // notification is what launched the app) is handled once the first
@@ -106,6 +114,9 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
       ref.read(notificationSchedulerProvider).runAll(resumeHouseholdId);
     }
     ref.read(updateCheckControllerProvider.notifier).check();
+    if (ref.read(currentSessionProvider) != null) {
+      ref.read(householdRepositoryProvider).touchActivityIfDue();
+    }
   }
 
   Future<void> _showBlockedUpdateDialog(Blocked blocked) {

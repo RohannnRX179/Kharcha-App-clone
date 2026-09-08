@@ -272,6 +272,58 @@ class ExportRepository {
     }
   }
 
+  /// "Export my data" (spec §11.18 F-18, T-M3.5) — the same full-backup
+  /// shape as [exportFullBackupJson], but restricted to rows [userId]
+  /// personally authored: their own profile, and every expense/income/
+  /// attachment/budget/recurring rule that names them as its owner. Offered
+  /// unconditionally from Settings → Data and inside the account-deletion
+  /// flow, unlike [exportFullBackupJson] which is admin-only.
+  Future<Result<File, Failure>> exportMyDataJson({
+    required String userId,
+  }) async {
+    try {
+      final profile = await _db.profileDao.findById(userId);
+      final expenses = await (_db.select(
+        _db.expenses,
+      )..where((t) => t.userId.equals(userId))).get();
+      final incomes = await (_db.select(
+        _db.incomes,
+      )..where((t) => t.userId.equals(userId))).get();
+      final attachments = await (_db.select(
+        _db.attachments,
+      )..where((t) => t.uploadedBy.equals(userId))).get();
+      final budgets = await (_db.select(
+        _db.budgets,
+      )..where((t) => t.createdBy.equals(userId))).get();
+      final recurringRules = await (_db.select(
+        _db.recurringRules,
+      )..where((t) => t.userId.equals(userId))).get();
+
+      final backup = <String, Object?>{
+        'exported_at': DateTime.now().toUtc().toIso8601String(),
+        'user_id': userId,
+        'profile': profile?.toDomain().toJson(),
+        'expenses': [for (final r in expenses) r.toDomain().toJson()],
+        'incomes': [for (final r in incomes) r.toDomain().toJson()],
+        'attachments': [for (final r in attachments) r.toDomain().toJson()],
+        'budgets': [for (final r in budgets) r.toDomain().toJson()],
+        'recurring_rules': [
+          for (final r in recurringRules) r.toDomain().toJson(),
+        ],
+      };
+      final bytes = Uint8List.fromList(
+        utf8.encode(const JsonEncoder.withIndent('  ').convert(backup)),
+      );
+      final file = await _writeTemp(
+        'kharcha_${_todayToken()}_my_data.json',
+        bytes,
+      );
+      return Result.ok(file);
+    } catch (e) {
+      return Result.err(ErrorMapper.map(e));
+    }
+  }
+
   PdfTransactionRow _transactionRow(domain.Expense expense, _Lookups lookups) =>
       PdfTransactionRow(
         date: _dateToken(expense.spentOn),

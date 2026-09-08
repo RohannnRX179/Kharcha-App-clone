@@ -37,6 +37,9 @@ class AppRoutes {
   static const receiptViewer = '/receipt/:attachmentId';
   static const diagnostics = '/diagnostics';
   static const notificationSettings = '/notifications';
+  static const feedback = '/feedback';
+  static const account = '/account';
+  static const accountDeleted = '/account/deleted';
 
   static String expenseDetailPath(String id) => '/expense/$id';
   static String incomeDetailPath(String id) => '/income/$id';

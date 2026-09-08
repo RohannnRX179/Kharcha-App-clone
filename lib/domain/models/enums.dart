@@ -19,3 +19,7 @@ enum BudgetScope {
 enum RecurFrequency { daily, weekly, monthly, yearly }
 
 enum TxnKind { expense, income }
+
+/// Mirrors `feedback.category`'s check constraint (`0011_multitenant_core.sql`,
+/// spec F-17) — every value's `.name` is already the exact db string.
+enum FeedbackCategory { general, bug, idea, confusing, praise }

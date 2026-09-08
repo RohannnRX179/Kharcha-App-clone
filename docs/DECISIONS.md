@@ -3343,3 +3343,94 @@ first-time-only blocker rather than a repeatable step:
 the 3-command sequence in step 6 above — steps 1-5 and 7 are one-time
 per-machine/per-device setup and shouldn't need repeating unless Xcode's
 account or the device's trust state is reset.
+
+## 2026-09-08 — Phase M3 code-based tasks (Feedback, liveness, account deletion, legal links)
+
+Implemented per explicit user instruction: build M3's app-code tasks now,
+defer every ops/publish task (T-M3.1's actual GitHub Pages publish,
+T-M3.7's friend-facing docs, T-M3.8's owner checklist, T-M3.9's Gate 13
+live-verify, T-M3.10's release) and all live device testing to a later
+combined pass alongside the still-open Gate M2 items.
+
+### Feedback submission bypasses the outbox entirely
+Every other write in this app queues through the outbox for offline
+resilience. Feedback doesn't: spec's own design assumes a submission
+always reaches the server directly ("the owner queries `feedback`... in
+the Supabase dashboard" — no client-side read path exists to reconcile a
+queued-but-not-yet-synced row against). Queuing it would mean a user who
+sees "Thanks for the feedback!" believing it's sent, only for an app
+reinstall or cache-clear to silently drop it before it ever synced. A
+direct network call with a clear "needs an internet connection" failure
+is the honest behaviour here.
+
+### A thin `FeedbackRemoteDataSource` seam, not a direct Postgrest call
+`FeedbackRepository` was first written to call
+`_client.from('feedback').insert(...)` directly. That's untestable with
+mocktail the normal way: `insert()` returns a `PostgrestFilterBuilder`
+(which `implements Future<T>`, not a plain `Future`), and mocktail's
+`thenAnswer` return value gets used as-is at the call site — a plain
+`Future<void>` stub doesn't satisfy that concrete return type, and the
+test throws at runtime. Extracted `FeedbackRemoteDataSource.insert()` (one
+line, wraps the same call) so the repository test mocks that thin seam
+instead — the exact same reasoning T-M2.2 used for
+`HouseholdRemoteDataSource` over mocking `SupabaseClient.rpc()` directly.
+`AccountDeletionRepository.deleteAccount()` didn't need this treatment:
+`FunctionsClient.invoke()` returns a plain `Future<FunctionResponse>`, so
+mocktail stubs it directly with no seam required.
+
+### "Export my data" is a new, narrower export, not a reuse of the full backup
+The existing `ExportRepository.exportFullBackupJson()` (Phase 12/F-11) is
+admin-only and household-wide by design — a disaster-recovery snapshot.
+F-18's "Export my data" needs to be available to every member,
+unconditionally, restricted to rows they personally authored. Rather than
+adding a filter parameter to the existing method (which would need to
+either drop the household-wide reference tables it deliberately always
+includes, or keep them and violate "restricted to rows the user
+authored"), added a separate `exportMyDataJson(userId)` with its own
+narrower shape: the caller's own profile plus every expense/income/
+attachment/budget/recurring-rule row naming them as owner
+(`userId`/`uploadedBy`/`createdBy` depending on the table) — no household,
+categories, or payment methods, since those are shared reference data the
+user didn't personally author.
+
+### Account-deletion re-authentication is a plain sign-in, not a separate API
+Spec F-18 step 3 asks to "re-enter the password" before the destructive
+call. GoTrue has no "verify this password without changing state" primitive
+— `AccountDeletionRepository.reauthenticate()` just calls
+`signInWithPassword` again with the current session's own email. This adds
+real value (confirms the person at the device currently knows the
+password, not just that the phone is unlocked) even though the resulting
+session is already valid; a wrong password throws the same
+`AuthException` sign-in itself would, remapped here to a flat "Incorrect
+password." rather than sign-in's own wording, since re-confirming an
+already-signed-in user is a different UX moment than signing in fresh.
+
+### A dedicated `/account/deleted` route, exempted from the signed-out redirect
+Spec F-18 explicitly says: "do not drop the user back at a login form as
+though nothing happened." But `AccountDeletionController.deleteAccount()`
+signs the user out as its last local step (mirroring `SignOutController`'s
+own wipe-then-signout order) — and the moment that happens,
+`onAuthStateChange` fires, which `app_router.dart`'s `redirect` listens to
+via `authRefresh`. Without an exemption, that auth-state flip would bounce
+the user straight to `/login` before they ever navigated to a confirmation
+screen at all. Added `AppRoutes.accountDeleted` to the same
+`signedOutReachable` set `/login`/`/signup`/`/verify-email` already sit in
+(same shape T-M2.4 established for those three), and the screen itself
+navigates there explicitly via `context.go()` once the controller's
+`Result` comes back `Ok` — by which point the sign-out has already
+happened, so there's no race between the two.
+
+### Privacy/terms URLs are a blank-by-default dart-define, not a hardcoded link
+`SignUpScreen`'s Terms/Privacy line was already built in T-M2.4 as an inert
+"not published yet" placeholder, deliberately, because T-M3.1 (writing and
+*publishing* an actual policy) hadn't happened yet. This session wrote the
+real policy content (`docs/legal/PRIVACY.md`/`TERMS.md`) but did not
+publish it anywhere — enabling GitHub Pages (or choosing any other public
+host) is a repo-settings decision for the user, not something to do
+unilaterally. Rather than leave the sign-up screen's placeholder
+hardcoded, added `AppConfig.privacyPolicyUrl`/`termsUrl` as blank-default
+dart-defines (same "compile-time config, no secrets committed" shape as
+every other `AppConfig` value) and a shared `openLegalPage()` helper that
+falls back to the same "not published yet" message when blank. Once the
+user publishes the pages, wiring them up is a one-line addition to
+`config/dev.json` — no code change needed.

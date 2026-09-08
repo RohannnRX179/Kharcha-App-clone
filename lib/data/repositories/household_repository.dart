@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../core/db/app_database.dart';
@@ -19,6 +20,8 @@ import 'profile_repository.dart';
 part 'household_repository.g.dart';
 
 const _uuid = Uuid();
+const _lastTouchedAtKey = 'touch_activity_last_at_ms';
+const _touchThrottle = Duration(hours: 1);
 
 /// Outcome of [HouseholdRepository.createHousehold] — the invite code is
 /// only ever returned at creation time (spec F-15: shown once, large and
@@ -223,6 +226,32 @@ class HouseholdRepository {
       return const Result.ok(null);
     } catch (error) {
       return Result.err(ErrorMapper.map(error));
+    }
+  }
+
+  /// [touchActivity], throttled to at most once per hour across app
+  /// restarts (spec D21/T-M3.4: "`touch_activity()` is called once per app
+  /// launch, at most once per hour") — persisted via `shared_preferences`,
+  /// same throttle shape as `UpdateCheckRepository.checkForUpdates`.
+  /// Best-effort: a failure (offline, signed out) is swallowed rather than
+  /// surfaced, since this is pure usage telemetry the spec explicitly says
+  /// must never block or nag anyone (D21: "no analytics SDK... no device
+  /// fingerprint" — the flip side is that missing one ping is meaningless).
+  Future<void> touchActivityIfDue() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastMs = prefs.getInt(_lastTouchedAtKey);
+    if (lastMs != null) {
+      final elapsed = DateTime.now().difference(
+        DateTime.fromMillisecondsSinceEpoch(lastMs),
+      );
+      if (elapsed < _touchThrottle) return;
+    }
+    final result = await touchActivity();
+    if (result.isOk) {
+      await prefs.setInt(
+        _lastTouchedAtKey,
+        DateTime.now().millisecondsSinceEpoch,
+      );
     }
   }
 

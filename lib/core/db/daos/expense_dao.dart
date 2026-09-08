@@ -238,6 +238,17 @@ class ExpenseDao extends DatabaseAccessor<AppDatabase> with _$ExpenseDaoMixin {
     return (row.read(expenses.id.count()) ?? 0) > 0;
   }
 
+  /// Live count of every non-deleted expense [userId] has saved, across
+  /// every household they've ever been in — backs the one-time feedback
+  /// prompt (spec F-17, T-M3.3), which fires on "the user's 10th saved
+  /// expense" specifically, not the household's.
+  Stream<int> watchCountByUser(String userId) {
+    final query = selectOnly(expenses)
+      ..addColumns([expenses.id.count()])
+      ..where(expenses.userId.equals(userId) & expenses.deletedAt.isNull());
+    return query.map((row) => row.read(expenses.id.count()) ?? 0).watchSingle();
+  }
+
   Future<Expense?> findById(String id) =>
       (select(expenses)..where((t) => t.id.equals(id))).getSingleOrNull();
 

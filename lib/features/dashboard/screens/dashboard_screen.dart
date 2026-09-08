@@ -24,6 +24,7 @@ import '../../../domain/models/report.dart';
 import '../../../routing/routes.dart';
 import '../../expenses/controllers/expense_list_preset_filter_controller.dart';
 import '../controllers/selected_month_controller.dart';
+import '../widgets/feedback_prompt_banner.dart';
 import '../widgets/month_selector.dart';
 import '../widgets/section_card.dart';
 import '../widgets/update_banner.dart';
@@ -54,6 +55,7 @@ class DashboardScreen extends ConsumerWidget {
           padding: const EdgeInsets.all(16),
           children: [
             const UpdateBanner(),
+            const FeedbackPromptBanner(),
             _HouseholdSummaryCard(monthStart: month),
             const SizedBox(height: 12),
             _BudgetProgressCard(monthStart: month),

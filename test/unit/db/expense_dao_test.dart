@@ -59,6 +59,35 @@ void main() {
     },
   );
 
+  test('watchCountByUser counts only this user, excludes soft-deleted rows, '
+      'across households (spec F-17, T-M3.3)', () async {
+    final now = DateTime.utc(2026, 9, 1);
+    Future<void> insert(String id, String householdId, String userId) =>
+        db.expenseDao.upsert(
+          ExpensesCompanion.insert(
+            id: id,
+            householdId: householdId,
+            userId: userId,
+            amountPaise: 1000,
+            spentAt: now,
+            spentOn: now,
+            createdAt: now,
+            updatedAt: now,
+          ),
+        );
+
+    await insert('e1', 'h1', 'u1');
+    await insert('e2', 'h1', 'u1');
+    await insert('e3', 'h2', 'u1'); // a different household, same user
+    await insert('e4', 'h1', 'u2'); // a different user
+    await insert('e5', 'h1', 'u1');
+    await db.expenseDao.softDelete('e5', now);
+
+    expect(await db.expenseDao.watchCountByUser('u1').first, 3);
+    expect(await db.expenseDao.watchCountByUser('u2').first, 1);
+    expect(await db.expenseDao.watchCountByUser('u3').first, 0);
+  });
+
   test('softDelete marks the row dirty and pending', () async {
     final now = DateTime.utc(2026, 9, 1);
     await db.expenseDao.upsert(

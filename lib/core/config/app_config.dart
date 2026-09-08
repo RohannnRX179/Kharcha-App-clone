@@ -9,6 +9,13 @@ class AppConfig {
   static const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
   static const appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'dev');
 
+  /// Public URLs for the privacy policy / terms (spec F-15/F-18, T-M3.1/
+  /// T-M3.6). Left blank until T-M3.1 actually publishes them — every
+  /// caller treats an empty value as "not published yet" rather than
+  /// launching a broken link.
+  static const privacyPolicyUrl = String.fromEnvironment('PRIVACY_POLICY_URL');
+  static const termsUrl = String.fromEnvironment('TERMS_URL');
+
   /// Feature flag for the Realtime listener (spec §9.6 T-4.8). Realtime is
   /// always an optimisation on top of the poll-based sync engine, never a
   /// correctness requirement — disabling it must leave the app fully

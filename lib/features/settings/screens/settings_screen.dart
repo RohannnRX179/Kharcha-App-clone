@@ -5,6 +5,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../../core/config/app_config.dart';
 import '../../../core/db/database_provider.dart';
+import '../../../core/widgets/legal_links.dart';
 import '../../../data/repositories/household_repository.dart';
 import '../../../data/repositories/profile_repository.dart';
 import '../../../data/repositories/update_check_repository.dart';
@@ -185,6 +186,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onTap: () => context.push(AppRoutes.notificationSettings),
               ),
               const Divider(),
+              _SectionHeader('Feedback'),
+              ListTile(
+                leading: const Icon(Icons.feedback_outlined),
+                title: const Text('Send feedback'),
+                onTap: () => context.push(AppRoutes.feedback),
+              ),
+              const Divider(),
               _SectionHeader('Data'),
               ListTile(
                 leading: const Icon(Icons.ios_share),
@@ -202,12 +210,43 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onTap: _clearCacheAndResync,
               ),
               const Divider(),
+              _SectionHeader('Account'),
+              ListTile(
+                leading: Icon(
+                  Icons.delete_forever_outlined,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  'Delete account',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                onTap: () => context.push(AppRoutes.account),
+              ),
+              const Divider(),
               _SectionHeader('About'),
               const _AboutTile(),
               ListTile(
                 leading: const Icon(Icons.system_update_outlined),
                 title: const Text('Check for updates'),
                 onTap: _checkForUpdates,
+              ),
+              ListTile(
+                leading: const Icon(Icons.privacy_tip_outlined),
+                title: const Text('Privacy policy'),
+                onTap: () => openLegalPage(
+                  context,
+                  url: AppConfig.privacyPolicyUrl,
+                  label: 'Privacy Policy',
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.description_outlined),
+                title: const Text('Terms'),
+                onTap: () => openLegalPage(
+                  context,
+                  url: AppConfig.termsUrl,
+                  label: 'Terms',
+                ),
               ),
               const Divider(),
               ListTile(

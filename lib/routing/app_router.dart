@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:go_router/go_router.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../features/account/screens/account_deleted_screen.dart';
+import '../features/account/screens/account_screen.dart';
 import '../features/analytics/screens/analytics_screen.dart';
 import '../features/auth/screens/login_screen.dart';
 import '../features/auth/screens/signup_screen.dart';
@@ -16,6 +18,7 @@ import '../features/dashboard/screens/dashboard_screen.dart';
 import '../features/expenses/screens/expense_detail_screen.dart';
 import '../features/expenses/screens/expense_list_screen.dart';
 import '../features/export/screens/export_screen.dart';
+import '../features/feedback/screens/feedback_screen.dart';
 import '../features/household/screens/household_management_screen.dart';
 import '../features/income/screens/income_detail_screen.dart';
 import '../features/income/screens/income_list_screen.dart';
@@ -109,10 +112,15 @@ GoRouter appRouter(Ref ref) {
       final loc = state.matchedLocation;
 
       final session = client.auth.currentSession;
+      // `/account/deleted` is reachable signed-out too (spec F-18): the
+      // deletion flow signs the user out as its very last local step, and
+      // without this exemption that auth-state flip would bounce them
+      // straight to `/login` before they ever saw the confirmation screen.
       final signedOutReachable =
           loc == AppRoutes.login ||
           loc == AppRoutes.signup ||
-          loc == AppRoutes.verifyEmail;
+          loc == AppRoutes.verifyEmail ||
+          loc == AppRoutes.accountDeleted;
       if (session == null) {
         return signedOutReachable ? null : AppRoutes.login;
       }
@@ -303,6 +311,21 @@ GoRouter appRouter(Ref ref) {
         path: AppRoutes.notificationSettings,
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const NotificationSettingsScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.feedback,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const FeedbackScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.account,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const AccountScreen(),
+      ),
+      GoRoute(
+        path: AppRoutes.accountDeleted,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const AccountDeletedScreen(),
       ),
     ],
   );
