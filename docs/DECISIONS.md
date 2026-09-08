@@ -3649,3 +3649,23 @@ no risk of over-firing. Confirmed live: relaunching post-fix and
 signing in populated `last_seen_at` with a fresh timestamp immediately,
 no background/foreground cycle needed. `fvm flutter analyze
 --fatal-infos` clean; `fvm flutter test` green at 540.
+
+### Superseded the broken v2.0.0 release with v2.0.1, rather than overwriting the tag
+`v2.0.0`'s GitHub Release was already real and public by the time the
+`INTERNET`-permission bug was found (unlike the earlier same-day
+`release.yml`-permissions incident, where the tag existed but the run
+had failed before publishing anything). Deleting/retagging a genuinely
+published release felt like the wrong kind of "fix" — instead bumped
+`pubspec.yaml` to `2.0.1+2` and cut a new `v2.0.1` tag/release. Also:
+edited the `v2.0.0` GitHub Release description in place (`gh release
+edit`) to prepend a "broken, do not use" warning linking to `v2.0.1`,
+and set `app_releases.min_supported = 2` (not just `build_number`) so
+F-14's blocking "too old to sync safely" dialog would catch anyone who
+did somehow install build 1 — this is exactly the scenario `min_supported`
+exists for. **Verified against the actual public artifact, not just a
+local build**: downloaded `app-release.apk` from the real
+`github.com/.../releases/download/v2.0.1/app-release.apk` URL with a
+plain `curl`, confirmed its signature via `apksigner verify` matches the
+real keystore, installed that exact file fresh on the emulator, and
+signed in successfully — closing the loop from "GitHub Release exists"
+to "the thing a real person downloads actually works."
