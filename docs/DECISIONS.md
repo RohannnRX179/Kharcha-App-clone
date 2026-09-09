@@ -4031,3 +4031,189 @@ for `KHARCHA_SPEC.md` at the repo root first — it is the living document,
 and its amendment sections (search for `[v2.0]`) override the matching
 section number in `docs/SPEC.md`, which is frozen v1.0 text kept for
 historical reference, not maintained.
+
+## 2026-09-09 — T-M1.9: custom SMTP finally set up, via Brevo (not Resend)
+
+Closes the one item explicitly flagged as "not optional before real
+distribution" — see T-M1.9's original 2026-09-06 entry above and R13.
+Prompted by the user asking whether the app was ready to send to a
+friend yet; the answer was "no, this specific gate first."
+
+**Why Brevo, not Resend (the originally-selected provider)**: Resend's
+free tier requires a verified custom domain to send to arbitrary
+recipients (its `onboarding@resend.dev` sandbox address only delivers to
+the account owner) — the exact blocker T-M1.9 was deferred on, and the
+user still doesn't own a domain. Researched free-tier alternatives with
+the domain requirement specifically in mind (Supabase's own docs list 6
+supported providers): Brevo verifies individual **sender addresses**
+rather than domains — click a confirmation link sent to the address, no
+DNS involved — and its free tier is 300 emails/day, permanently (not a
+trial). AWS SES/SendGrid/Postmark/ZeptoMail were all ruled out for
+worse fits (sandbox restrictions, time-limited free tiers, or too low a
+cap for even a handful of friends) — full comparison not reproduced
+here, just the conclusion.
+
+**Setup, via Claude-in-Chrome, following this project's established
+split of responsibility** (assistant drives navigation/reads pages;
+user handles account creation, passwords, and any phone/SMS
+verification — same pattern as T-1.1's Supabase account and T-1.2's CLI
+token): user created the Brevo account and completed its required phone
+verification; assistant generated a no-expiry SMTP key (`Kharcha
+Supabase Auth`, copied via clipboard rather than ever displaying the raw
+secret in the conversation) and wired it into Supabase Dashboard →
+Authentication → Emails → SMTP Settings (`smtp-relay.brevo.com:587`,
+sender name "Kharcha").
+
+**Two real mistakes caught before they became silent failures**, both
+via a "does this look right?" pause rather than assuming success:
+1. Immediately after Brevo sign-in, the workspace briefly showed as
+   "ICRA Analytics Ltd" instead of a fresh personal workspace — flagged
+   to the user before touching anything. Turned out to be a stale
+   cached page from the tab used mid-signup, not a real account mix-up;
+   a fresh navigation confirmed the workspace is correctly "Personal."
+2. **The real one**: the sender address the user specified for Supabase
+   (`vineetrpanicker2002@gmail.com`, with an "r") didn't match the
+   address Brevo actually auto-verified from the account's own sign-up
+   email (`vineetpanicker2002@gmail.com`, no "r"). Caught by checking
+   Brevo's Senders list after configuring Supabase rather than trusting
+   the typed value — had this gone uncaught, Supabase would have been
+   sending as an address Brevo never verified, which Brevo would
+   reject, and the first real symptom would have been a friend's
+   confirmation email silently never arriving. Fixed by updating
+   Supabase's sender field to match Brevo's actual verified address.
+
+**Live-verified end-to-end**, not just configured: triggered a real
+"Send password recovery" from Supabase's Users panel against the
+project's own `vineetiimabc@gmail.com` test-admin account (chosen so no
+other family member received an unexpected email). Confirmed three
+independent signals: (1) Supabase's Auth Logs show the `/recover`
+request completed with `status: 200` in ~773ms (GoTrue's SMTP send is
+synchronous, so a fast 200 means the send itself succeeded, not just
+that the API call was accepted); (2) the Auth Logs also show `env
+GOTRUE_RATE_LIMIT_EMAIL_SENT changed, updating Email limiter from 2/1h
+to 30` at the moment custom SMTP was enabled, confirming the exact
+default-SMTP throttle that caused T-M1.9's earlier real rate-limit
+failure (`docs/PROGRESS.md`'s 2026-09-08 session note) is gone; (3) most
+directly, Brevo's own transactional Logs page shows the email
+progressing `Sent` → `Delivered` within the same minute, both events
+timestamped 06:10 — first attempt, no retry needed. Brevo's log view
+had initially shown "0 logs" moments after sending, which briefly looked
+like a silent failure; re-checking after Brevo's own indexing delay
+resolved it, so a `0 logs` result there right after sending is not
+itself proof of failure — always re-check before concluding.
+
+**What this unblocks**: the friend-facing brand-new-signup path (Ring 3
+of §16.4, and Gate M2's own still-open literal acceptance line — a real
+inbox confirming a real sign-up) can now actually be attempted without
+hitting the old 2/hour wall after 2-3 tries. Not yet re-attempted this
+session — a live sign-up-to-first-expense run, ideally with a genuinely
+fresh test address, is the natural next step before ring 3 for real.
+
+**Known trade-off, accepted deliberately**: the sender is a personal
+Gmail address, not a branded domain (`noreply@kharcha.app` or similar)
+— cosmetic only, since Brevo's relay makes the actual delivery
+mechanism identical either way. Revisit only if a domain is ever
+acquired; not a blocker for distribution.
+
+## 2026-09-09 — Auth email deep-link is broken (confirm/reset links point at `localhost`); plan written, not yet implemented
+
+Found while asking "what happens if a first-time user's confirmation
+link doesn't work" — prompted by the user, not discovered in a live
+test. Investigated the actual code and native config (not just
+PROGRESS.md's own prior notes) before concluding anything, since this
+touches production auth and a prior mismatch this session (the Brevo
+sender address) had already shown that trusting an old note without
+re-checking live state is a real way to get this wrong.
+
+**Root cause, confirmed by reading the code**: `AuthRepository.signUp()`,
+`.resetPassword()`, and `.resendConfirmationEmail()`
+(`lib/data/repositories/auth_repository.dart`) call
+`signUp()`/`resetPasswordForEmail()`/`resend()` with no `emailRedirectTo`
+argument, so every auth email's link falls back to the Supabase
+project's Site URL — still `http://localhost:3000`, left at its Phase 0
+default (T-M1.8's note: "Site URL left at its default per spec, only
+the allow-list entry was required"). A custom scheme,
+`io.supabase.kharcha://login-callback/`, was added to the Redirect URLs
+*allow-list* at T-M1.8, but that only permits it as a valid redirect
+target — it was never made the actual Site URL, and nothing in the app
+ever asks for it explicitly per-call either.
+
+**It's worse than a cosmetic redirect failure, for two compounding
+reasons, both confirmed by reading the actual files rather than
+assuming**:
+1. Neither `android/app/src/main/AndroidManifest.xml` nor
+   `ios/Runner/Info.plist` registers `io.supabase.kharcha` as a
+   URL scheme/intent-filter at all. So even fixing the Site URL alone
+   would not help — the OS has nowhere to hand the link to; it would
+   still just fail to open on-device.
+2. There is no password-reset landing screen anywhere in the app —
+   `lib/routing/routes.dart` has no `/reset-password` (or equivalent)
+   route. `AuthRepository.resetPassword()` only ever sends the email;
+   nothing in the UI was ever built to consume a successful recovery
+   deep link and let the user actually set a new password. Fixing the
+   redirect mechanics alone gets a working recovery *link* with
+   nowhere to go once tapped.
+
+**What still works despite all of this, and why it's not a total dead
+end today**: Supabase's `/auth/v1/verify` endpoint confirms the token
+and sets `email_confirmed_at` server-side *before* attempting any
+redirect — so a tapped confirmation link genuinely does confirm the
+account even though the subsequent redirect fails. The one recovery
+path that works today with zero code changes: force-quit and reopen the
+Kharcha app. `AppRouter`'s `redirect` (`lib/routing/app_router.dart`)
+sends a session-less launch to `/splash` → `/login` (not back to the
+stuck `/verify-email` screen, since `initialLocation` is `/splash`,
+which isn't in the `signedOutReachable` set) — signing in there with
+the same email/password succeeds immediately, since the account really
+is confirmed. Nothing in the UI tells a friend to do this, though, so
+in practice a real friend would just see a broken browser page and stop
+— exactly the R13/Ring-3 failure mode (§16.4: "if the first friend
+needs you, the app is not ready for the second").
+
+### Plan (not implemented — documented per the user's explicit request to plan now, build later)
+
+1. **Android**: register an intent-filter for
+   `io.supabase.kharcha://login-callback/` on `MainActivity`
+   (`AndroidManifest.xml`), marked `BROWSABLE`.
+2. **iOS**: register the same scheme via `CFBundleURLTypes` in
+   `Info.plist`.
+3. **Code**: pass `emailRedirectTo: 'io.supabase.kharcha://login-callback/'`
+   explicitly on `signUp()`, `resetPasswordForEmail()`, and `resend()`
+   in `auth_repository.dart`, rather than relying solely on the
+   dashboard's Site URL as the single source of truth.
+4. **Supabase Dashboard**: also update the project's Site URL itself
+   (Authentication → URL Configuration) to the same custom scheme, as a
+   safety-net default for any auth email type not explicitly covered by
+   #3.
+5. **New screen + route**: `/reset-password` — a plain new-password +
+   confirm form, reached by listening for
+   `AuthChangeEvent.passwordRecovery` and routing there, calling
+   `supabase.auth.updateUser(UserAttributes(password: ...))`. Currently
+   doesn't exist at all (see root-cause point 2 above).
+6. `supabase_flutter` 2.17.2 (already the pinned version) is expected to
+   auto-handle the incoming deep link once 1–4 are in place, per its own
+   deep-linking setup guide — no extra Dart-side listener code beyond
+   what #5 needs. **To be confirmed in practice during implementation**,
+   not assumed here.
+7. **Fallback safety-net UX**, the user's own suggestion during this
+   session, kept even after the real fix lands (defends against edge
+   cases like Android's link-picker not choosing the app, or a friend
+   closing the browser tab instead of letting the redirect run) — two
+   pieces, both on `VerifyEmailScreen`:
+   - A permanent, non-timed "Already tapped the link? Sign in" text
+     link — always visible, not dependent on the user noticing a
+     transient banner.
+   - A ~5s bottom `SnackBar`, shown when the app resumes from
+     background and confirmation still hasn't landed after a short
+     grace period: "If you tapped the confirmation link, try signing in
+     — your account may already be ready", with a `SnackBarAction`
+     ("Sign in") rather than plain text, so it's one tap, not a dead
+     end.
+8. Requires a new signed Android build and a new iOS build once
+   implemented (native manifest changes can't be hotfixed via the
+   Supabase dashboard alone), plus a live re-test of the full sign-up
+   flow end to end — folds into Gate M2's still-open brand-new-signup
+   item and Ring 3 readiness (§16.4).
+
+**Not implemented this session, deliberately** — the user asked for the
+plan documented now and to build it later themselves.
