@@ -1,4 +1,0 @@
-module flutter_secure_storage_darwin {
-header "flutter_secure_storage_darwin-Swift.h"
-export *
-}
