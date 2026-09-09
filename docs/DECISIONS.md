@@ -4602,3 +4602,63 @@ Gate 14's Remove-member item is now genuinely closed: the mechanism
 works, the sync gap it surfaced is fixed, and both are live-verified
 against real production data. Delete-household remains deliberately
 untested (no safe way to exercise it against the real household).
+
+## 2026-09-09 — Gate M2's last open item: "member leaves" live-verified on two real devices
+
+Same day, later session. Gate M2's one remaining literal-acceptance gap
+was the self-service leave path: "account B leaves — B's local database
+is empty and B is on `/onboarding`, while A's household is unchanged."
+Every prior test this project has run on leaving/removal was either
+admin-driven (`remove_member()`, today's earlier Tanish test) or from
+the departing side but never checked B's own device state afterward.
+
+### Setup
+
+Booted a second Android emulator (`kharcha_test_2`) to offer a
+fully self-driven two-device test; it was still running a very old app
+build (correctly triggered the "Update required" blocking dialog from
+F-14's `app_releases`/`min_supported` check — a nice incidental
+confirmation that gate is still working) and had no session. Rebuilt
+and installed the current debug APK there too, but the user chose to
+drive the actual join/leave from their own iPhone instead, for a
+genuinely independent device rather than another emulator on the same
+machine.
+
+### What happened
+
+The user joined a fresh "Vintya" account (a new profile row, distinct
+from the earlier deleted-account-bug test's "Vintya" — same display
+name, different id, reusing the email) via the real invite code, then
+used **Settings → Household → Leave household** on their own device.
+
+**Confirmed server-side immediately**: the new profile's `household_id`
+went to `null` and — because it left with zero transaction history in
+the household, same shape as this morning's Tanish gap — `leave_house
+hold()`'s migration-0018 fix stamped `last_departed_household_id` to
+Panicker Family's real id automatically, no backfill needed this time.
+This is the first fully natural (non-backfilled) confirmation that
+0018's fix fires correctly on a genuine live departure.
+
+**Admin side (A)**: ran a normal "Sync now" (not a cache clear) on
+`kharcha_test`. Confirmed two ways — the user's own look at the
+Household roster (Vintya not shown), and a direct query of the pulled
+`kharcha.sqlite`: her row is present locally (for the same
+`watchAllKnown()`-style historical-display reasons Rupesh's and
+Tanish's rows persist) with `household_id` correctly `null`, and the
+Household screen's `watchAll()` correctly excludes her — Trupti and
+Vineet, unaffected, still show as the 2 real active members.
+
+**Departing side (B)**: the user confirmed their iPhone landed on the
+create/join-household onboarding screen — the literal "B's local
+database is empty and B is on `/onboarding`" acceptance criterion,
+observed directly rather than inferred.
+
+### Verdict
+
+Gate M2's full literal acceptance line is now closed: A invites, B
+signs up/joins by code (closed 2026-09-09 earlier), both see synced
+data, and B leaving cleanly resets B while leaving A's household
+correct (closed here). Nothing left open on Gate M2's own acceptance
+criteria. No code changes this session — purely a live-test
+confirmation of already-shipped fixes (`leave_household()`'s existing
+mechanism plus today's migration 0018).
