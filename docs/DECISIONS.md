@@ -4476,3 +4476,129 @@ production, and now live-verified on a real device against real
 production data via the exact reproduction steps from the original
 report. Only remaining open item in `docs/PROGRESS.md`'s bug tracker
 is the daily-reminder notification gap (T-M3.9).
+
+## 2026-09-09 — Gate 14's Remove-member test found a second, related sync gap; fixed and live-verified
+
+Same day, later session. Live-tested Gate 14's other never-tested item
+(Delete-household was already ruled out as too risky to test on the
+real household — remove-member was the target). With the user's
+explicit go-ahead — Tanish is a real family member, not a disposable
+test account, but `remove_member()` is fully recoverable (his historical
+data stays, he just needs a new invite code to rejoin) — removed him
+via the real admin UI on `kharcha_test`.
+
+### The mechanism worked; a real device revealed a real gap
+
+`remove_member()` itself executed correctly: `household_id` nulled,
+role/joined_at reset, historical data untouched — confirmed directly
+against production. But the admin's own device never reflected it via
+a normal **"Sync now"** — only a full **"Clear local cache and
+re-download"** removed Tanish from the roster. Root-caused, not
+guessed: Tanish has **zero expenses or income** in this household (a
+seeded test member who never logged anything). `profile_visible_to_me()`
+has exactly two ways to see someone else's row — a live `household_id`
+match, or having authored a transaction still in the household. Leaving/
+removal deliberately nulls `household_id` (the person might join a
+different household later), and Tanish satisfies neither remaining
+branch, so his post-removal row became **permanently invisible to RLS**
+for every other household member. `selectSince(cursor)` had nothing to
+pull, ever — not a cursor problem, a visibility problem. "Clear cache
+and re-download" only worked because a *fresh* RLS-scoped pull
+naturally excludes what it can no longer see; it doesn't rely on
+detecting a change.
+
+This is a sibling of the 2026-09-07 "Profiles-tombstone gap" (that fix
+covers a departed member who *did* leave a transaction behind, e.g.
+Rupesh) and of this same day's earlier deleted-account fix — same root
+shape (client has no signal a row is gone), third distinct manifestation
+found this project.
+
+### Fix: `last_departed_household_id`, not a new tombstone table
+
+New migration `0018_profile_departure_visibility.sql`:
+- `profiles.last_departed_household_id uuid` — stamped alongside the
+  existing `household_id = null` in both `leave_household()` and
+  `remove_member()`.
+- `profile_visible_to_me()` gains a branch matching on it.
+
+Deliberately **not** the `deleted_at`-style tombstone from earlier
+today — that pattern relies on keeping `household_id` intact, which is
+wrong here: a departed member needs `household_id` to actually change
+so they can join somewhere else. `last_departed_household_id` only
+grants former housemates read visibility; it never affects membership
+logic, capacity checks, or any of the `and deleted_at is null` filters
+added earlier today (a completely separate column, zero overlap).
+**No client-side change needed at all** — `ProfileSyncAdapter.
+selectSince()` already passes `filterByHousehold: false` and relies
+entirely on RLS (from the 2026-09-07 fix), and the Household screen's
+`watchAll()` already filters by a matching `household_id`, so a
+correctly-nulled local row is automatically excluded from the roster
+the moment it's pulled — exactly the mechanism already proven for
+Rupesh's departure.
+
+### Deployment: blocked by the auto-mode safety classifier, twice
+
+Both `supabase db push --linked` (the migration) and the one-time data
+backfill (below) were refused by this session's safety classifier as
+production-database writes — even though an equivalent push earlier
+this same session (migration 0017) had gone through. Per the classifier
+denial's own instruction, stopped and asked the user rather than
+attempting a workaround; the user ran both commands themselves in their
+own terminal. `supabase migration list --linked` confirms `0018` is
+now applied.
+
+### Backfill: a one-time, deliberate data correction
+
+Tanish's actual departure happened *before* migration 0018 existed, so
+his row has no `last_departed_household_id` from the real event — the
+fix can't retroactively know about a departure it didn't witness. The
+user ran a single `update ... set last_departed_household_id = '<real
+household id>' where id = '<Tanish's real id>'` — a metadata-only
+correction reflecting a real, already-completed, already-verified
+departure; no financial data touched.
+
+### Verified three ways, not just deployed
+
+1. **RLS impersonation** (read-only, mirroring T-17.1's methodology):
+   impersonated Vineet's session, called `profile_visible_to_me(Tanish's
+   id)` directly — now returns `true` (was implicitly `false` before).
+2. **The exact client query, simulated**: ran the same `updated_at >
+   cursor`, RLS-scoped, unfiltered-by-household select `TableRemoteData
+   Source.selectSince()` issues — Tanish's row (`household_id: null`)
+   now comes back, where before this fix it would not have appeared at
+   all.
+3. **Live, on-device, end-to-end** — the same seeded-stale-row method
+   used to verify the original 2026-09-07 tombstone fix: force-stopped
+   the app, wrote a synthetic "Tanish still an active member" row
+   directly into `kharcha_test`'s local `kharcha.sqlite` (old
+   `updated_at`, `household_id` = the real household, matching exactly
+   what a device that hadn't synced since before his removal would have
+   cached), pushed the modified file back via `adb push` to
+   `/data/local/tmp` + `run-as cp` (piping through `run-as sh -c` failed
+   with `Permission denied` — a known adb quirk; the push-then-copy
+   route works), relaunched. **The app's own automatic startup sync**
+   — no manual "Sync now" needed — corrected the seeded row: pulled
+   `kharcha.sqlite` back off the device afterward and confirmed Tanish's
+   row now shows `household_id: null` (previously it would have stayed
+   at the seeded stale value forever), and the Household screen
+   correctly shows "2 members" (Trupti, Vineet), matching exactly how
+   Rupesh's already-working departure renders.
+
+### Note for later navigation in this project
+
+Bottom-nav taps on this emulator were landing roughly 500px too high
+for several attempts this session (eyeballed from the Read tool's
+downscaled chat preview) before being corrected via the same pixel-scan
+method already documented in memory (`kharcha_open_bugs.md`'s "adb tap
+coordinates" note) — the nav bar's true y-position on this 2400px-tall
+screen is much lower than the downscaled preview suggests. Re-confirms:
+always pixel-scan a saved screenshot for ambiguous/bottom-of-screen taps
+rather than eyeballing the chat preview, even mid-session after other
+taps have already worked correctly higher up the screen.
+
+### Verdict
+
+Gate 14's Remove-member item is now genuinely closed: the mechanism
+works, the sync gap it surfaced is fixed, and both are live-verified
+against real production data. Delete-household remains deliberately
+untested (no safe way to exercise it against the real household).
