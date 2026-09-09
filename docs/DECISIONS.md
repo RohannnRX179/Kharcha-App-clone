@@ -4410,3 +4410,69 @@ roster after a normal "Sync now" (not a full cache-and-redownload) —
 needs an Android device, unavailable this session per the user. The
 schema and function are live and ready; this is purely a real-device
 test still owed.
+
+## 2026-09-09 — Deleted-account profile cache gap: live-verified, bug closed
+
+Same day, immediately after the above. An Android device became
+available, so re-ran the exact scenario the original bug report used:
+reopened `kharcha_test` (Vineet/admin, real Panicker Family household,
+session left intact from the prior session), the user rejoined a real
+test account ("Vintya") via the real invite code from a second device,
+then deleted that account through the real in-app F-18 flow.
+
+### First attempt caught a gap in this session's own process, not in the fix
+
+The emulator was still running the app build from *before* this
+session's client-side edits — only the Supabase migration and Edge
+Function had actually been deployed; the Flutter app itself was never
+rebuilt onto the device. Result: the deleted member showed as
+**"Inactive"** rather than disappearing. Checked the server first
+rather than assuming the fix was wrong: `profiles` showed exactly what
+migration 0017 intends — `deleted_at` set, `is_active: false`,
+`household_id` still the real household. The old client code simply
+has no `deleted_at` handling for profiles at all, so it upserted
+whatever the server sent, including the now-correct `is_active: false`
+— which the UI renders as an "Inactive" badge instead of removing the
+row. This confirmed the server-side half of the fix was correct and
+isolated the problem to a stale binary, not the logic.
+
+### Rebuilt, reinstalled, retested
+
+`fvm flutter build apk --debug --dart-define-from-file=config/prod.json`,
+then `adb install -r` over the existing app — preserves local app data
+(the Drift DB, the signed-in session) since it's a same-signature
+reinstall, not a fresh install. Relaunched: landed straight back on
+the real Dashboard with real data, confirming the session survived.
+
+Ran a normal **"Sync now"** (deliberately not "Clear local cache and
+re-download" — that path already worked before this fix and would
+prove nothing). Verified two ways:
+- **On-screen**: the Household roster shows exactly 3 members
+  (Tanish, Trupti, Vineet) — no ghost "Vintya" entry, no "Inactive"
+  badge.
+- **On the actual on-device database** (the authoritative check, not
+  just trusting a screen that might filter differently than assumed):
+  pulled `kharcha.sqlite` via `adb exec-out run-as ... cat` and queried
+  it directly. Vintya's row is **completely absent** from `profiles`
+  — not present with `is_active=0`. `sync_meta`'s `profile` row shows
+  a fresh `last_pulled_at`/`last_success_at` from this session, and
+  `outbox_entries` is empty — a genuine incremental pull actually ran
+  and converged, not a stale cache or a fluke.
+
+### One near-miss during navigation, caught and reverted
+
+A stray tap while navigating Settings briefly opened the real "Leave
+Panicker Family?" confirmation dialog on the admin's own session —
+cancelled immediately, before confirming. Verified no harm: household
+member count and invite-code usage count were unchanged afterward
+(same category of near-miss as the one documented in PROGRESS.md's
+2026-09-09 "Gate M2's join-by-code gap closed" row).
+
+### Verdict
+
+The bug is closed end-to-end: root-caused, fixed in code, the ripple
+effect on membership-counting RPCs fixed alongside it, pushed to
+production, and now live-verified on a real device against real
+production data via the exact reproduction steps from the original
+report. Only remaining open item in `docs/PROGRESS.md`'s bug tracker
+is the daily-reminder notification gap (T-M3.9).
