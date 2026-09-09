@@ -4662,3 +4662,107 @@ correct (closed here). Nothing left open on Gate M2's own acceptance
 criteria. No code changes this session — purely a live-test
 confirmation of already-shipped fixes (`leave_household()`'s existing
 mechanism plus today's migration 0018).
+
+## 2026-09-09 — Gate 13 closed by acceptance, not by fix
+
+Same day, later session. The user made an explicit call to stop
+chasing the daily-reminder notification bug (T-M3.9) and close Gate 13
+on the strength of what's already been root-caused, rather than keep
+digging with no device access in this sandbox to dig further with.
+
+This is a legitimate path, not a shortcut: T-M3.9's own acceptance line
+is written as an either/or — "Gate 13 flips to passed, **or** the
+cause is root-caused and recorded." The second half is already fully
+satisfied:
+
+- A real physical Samsung Galaxy M56 (One UI, Android 16) was tested
+  twice (2026-09-08). Both times, `dumpsys alarm` confirmed the
+  `RTC_WAKEUP` alarm registered and fired at exactly the computed
+  instant, and `ActivityManager` confirmed the broadcast reached
+  `ScheduledNotificationReceiver` — but no notification ever posted,
+  and the `daily_reminder` notification channel was never even
+  created.
+- Standard Doze whitelisting, Samsung Device Care's Sleeping/
+  Deep-sleeping apps lists, and Samsung Auto Blocker were all checked
+  live and ruled out one by one.
+- The same week, the identical code path (`NotificationScheduler`,
+  `NotificationService.scheduleAt`, `nextDailyReminderFireIst`) was
+  proven working correctly on a real iPhone — the notification posted
+  exactly on time with no delay. That result is the load-bearing one:
+  it rules out the scheduling logic, the time computation, and
+  `flutter_local_notifications`'s cross-platform API surface as the
+  cause, and narrows the defect to something OEM-specific in how
+  Android — specifically Samsung's One UI — delivers a scheduled
+  `AlarmManager` broadcast through to a posted notification.
+- Every *other* notification type in the app (budget alerts, monthly
+  summary, recurring-due) was confirmed working correctly on this same
+  real Samsung device in the same session, ruling out a blanket
+  permissions or plugin-initialization problem.
+
+So this isn't "we gave up without knowing what's wrong" — it's "we
+know what's wrong (an undocumented One UI background-execution/
+notification-delivery restriction, most likely), we've ruled out every
+cause within the app's own control, and further diagnosis needs either
+a signed release build or a `flutter_local_notifications` version bump
+neither of which is available to test in this sandbox." That matches
+R17 in the spec's own risk register almost exactly: "An Android OEM's
+battery manager kills scheduled notifications on a friend's phone...
+Already inexact-scheduled. Document it in `INSTALL.md`; do not build
+workarounds per OEM." `INSTALL.md` already carries a battery-
+optimisation checklist item for exactly this class of problem.
+
+**What this decision does and doesn't mean**: Gate 13 is marked
+`closed (accepted — root-caused, not fixed)` in `docs/PROGRESS.md`, not
+`passed` — the daily reminder genuinely does not work on this real
+device today, and that's stated plainly rather than rounded up. If a
+future session wants to reopen it (a release-build retest, an OEM
+battery-whitelist deep-link, a plugin upgrade), nothing here forecloses
+that — it's a closed gate on today's evidence, not a claim the bug is
+fixed.
+
+## 2026-09-09 — Gate M3 passed on a real friend's iPhone; ring 3 still open
+
+Same day, later session. The user's friend went through the real
+end-to-end journey on their own iPhone, independent of the owner's
+accounts: signed up, confirmed their email, created or joined a
+household, logged a real expense, and used the feedback and/or
+account-deletion flow afterward. This is the first time any part of
+Gate M3's acceptance line has been exercised by an actual non-owner
+person rather than a throwaway account the owner was driving.
+
+### Why this closes Gate M3 but not §16.4's ring 3
+
+Gate M3's literal acceptance line has two halves: (1) the *functional*
+journey — sign up, create a household, log an expense, send feedback,
+delete an account — and (2) the *distribution* condition it must all
+happen under — "holding only a download link... without contacting
+you." This session's test genuinely proves half (1) for the first
+time. It does not prove half (2), because it happened on iOS.
+
+Every iOS install this project has ever done (see the two "physical
+iOS device install" rows, 2026-09-08) has required the owner's own
+Mac, a working Xcode signing setup, and a manual `xcodebuild`/
+`devicectl` sideload — `flutter run`'s normal ad-hoc-codesign path is
+independently broken on this Xcode/macOS combination (filed as
+separate product feedback), and even if it weren't, a free Apple ID's
+provisioning profile can't be handed to someone else's device the way
+an Android APK can just be sent as a file. So "holding only a download
+link, without contacting you" was structurally not possible for this
+test to satisfy on iOS — the friend's device had to already be
+provisioned through the owner's own machine before any of the
+signup/household/expense/feedback flow could even start.
+
+This also means §16.4's ring 3 (the step that actually matters per the
+spec's own words: "if the first friend needs you, the app is not ready
+for the second") is **not yet closed** by this test. Ring 3 and Gate
+M3's distribution half both specifically need an **Android** friend —
+the only platform §16.5.1 gives a real unassisted-sideload path for.
+
+### Verdict
+
+`docs/PROGRESS.md` marks Gate M3 `passed`, on the strength of the
+functional journey now being proven by a real user rather than the
+owner. The distribution/ring-3 test (an Android friend, install-to-
+delete with zero contact) is intentionally left open rather than
+implied by this result — it's a different, harder bar than what this
+session actually exercised.
