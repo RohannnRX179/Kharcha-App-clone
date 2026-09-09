@@ -100,10 +100,7 @@ class _NeonFab extends StatelessWidget {
 
 /// Glass-effect navigation bar with neon indicator
 class _GlassNavigationBar extends StatelessWidget {
-  const _GlassNavigationBar({
-    required this.currentIndex,
-    required this.onTap,
-  });
+  const _GlassNavigationBar({required this.currentIndex, required this.onTap});
 
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -118,9 +115,7 @@ class _GlassNavigationBar extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surfaceRaised,
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(
-          color: AppColors.outline.withValues(alpha: 0.4),
-        ),
+        border: Border.all(color: AppColors.outline.withValues(alpha: 0.4)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.3),
@@ -136,10 +131,7 @@ class _GlassNavigationBar extends StatelessWidget {
           onDestinationSelected: onTap,
           destinations: [
             for (var i = 0; i < _labels.length; i++)
-              NavigationDestination(
-                icon: Icon(_icons[i]),
-                label: _labels[i],
-              ),
+              NavigationDestination(icon: Icon(_icons[i]), label: _labels[i]),
           ],
         ),
       ),

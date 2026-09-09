@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:kharcha/core/constants/app_constants.dart';
 import 'package:kharcha/core/errors/failure.dart';
 import 'package:kharcha/data/repositories/auth_repository.dart';
 
@@ -98,6 +99,7 @@ void main() {
           email: any(named: 'email'),
           password: any(named: 'password'),
           data: any(named: 'data'),
+          emailRedirectTo: any(named: 'emailRedirectTo'),
         ),
       ).thenAnswer((_) async => AuthResponse());
 
@@ -116,6 +118,7 @@ void main() {
           email: any(named: 'email'),
           password: any(named: 'password'),
           data: any(named: 'data'),
+          emailRedirectTo: any(named: 'emailRedirectTo'),
         ),
       ).thenAnswer((_) async => AuthResponse());
 
@@ -130,6 +133,7 @@ void main() {
           email: 'a@b.com',
           password: 'secret123',
           data: {'display_name': 'Vineet'},
+          emailRedirectTo: AppConstants.authCallbackUrl,
         ),
       ).called(1);
     });
@@ -142,6 +146,7 @@ void main() {
             email: any(named: 'email'),
             password: any(named: 'password'),
             data: any(named: 'data'),
+            emailRedirectTo: any(named: 'emailRedirectTo'),
           ),
         ).thenThrow(
           const AuthException(
@@ -172,6 +177,7 @@ void main() {
             email: any(named: 'email'),
             password: any(named: 'password'),
             data: any(named: 'data'),
+            emailRedirectTo: any(named: 'emailRedirectTo'),
           ),
         ).thenThrow(const SocketException('no route to host'));
 
@@ -196,14 +202,20 @@ void main() {
         () => auth.resend(
           email: any(named: 'email'),
           type: any(named: 'type'),
+          emailRedirectTo: any(named: 'emailRedirectTo'),
         ),
       ).thenAnswer((_) async => ResendResponse());
 
       final result = await repository.resendConfirmationEmail('a@b.com');
 
       expect(result.isOk, isTrue);
-      verify(() => auth.resend(email: 'a@b.com', type: OtpType.signup))
-          .called(1);
+      verify(
+        () => auth.resend(
+          email: 'a@b.com',
+          type: OtpType.signup,
+          emailRedirectTo: AppConstants.authCallbackUrl,
+        ),
+      ).called(1);
     });
 
     test('maps a thrown error through ErrorMapper', () async {
@@ -211,6 +223,7 @@ void main() {
         () => auth.resend(
           email: any(named: 'email'),
           type: any(named: 'type'),
+          emailRedirectTo: any(named: 'emailRedirectTo'),
         ),
       ).thenThrow(const AuthException('boom'));
 
@@ -259,9 +272,20 @@ void main() {
 
   group('resetPassword', () {
     test('returns Ok on success', () async {
-      when(() => auth.resetPasswordForEmail(any())).thenAnswer((_) async {});
+      when(
+        () => auth.resetPasswordForEmail(
+          any(),
+          redirectTo: any(named: 'redirectTo'),
+        ),
+      ).thenAnswer((_) async {});
       final result = await repository.resetPassword('a@b.com');
       expect(result.isOk, isTrue);
+      verify(
+        () => auth.resetPasswordForEmail(
+          'a@b.com',
+          redirectTo: AppConstants.authCallbackUrl,
+        ),
+      ).called(1);
     });
   });
 

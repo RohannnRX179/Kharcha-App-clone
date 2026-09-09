@@ -24,6 +24,7 @@ import '../../../domain/models/report.dart';
 import '../../../routing/routes.dart';
 import '../../expenses/controllers/expense_list_preset_filter_controller.dart';
 import '../controllers/selected_month_controller.dart';
+import '../widgets/feedback_prompt_banner.dart';
 import '../widgets/month_selector.dart';
 import '../widgets/section_card.dart';
 import '../widgets/update_banner.dart';
@@ -56,6 +57,7 @@ class DashboardScreen extends ConsumerWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
           children: [
             const UpdateBanner(),
+            const FeedbackPromptBanner(),
             _HouseholdSummaryCard(monthStart: month),
             const SizedBox(height: 14),
             _BudgetProgressCard(monthStart: month),
@@ -146,9 +148,8 @@ class _PendingRecurringRowState extends ConsumerState<_PendingRecurringRow> {
                 const SizedBox(height: 2),
                 Text(
                   widget.rule.amount.format(),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AppColors.textMuted,
-                  ),
+                  style: Theme.of(context).textTheme.bodySmall
+                      ?.copyWith(color: AppColors.textMuted),
                 ),
               ],
             ),
@@ -301,8 +302,9 @@ class _SummaryBody extends StatelessWidget {
                 Text(
                   '${changePct.abs().toStringAsFixed(0)}% vs last month',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color:
-                        changePct >= 0 ? AppColors.danger : AppColors.neonMint,
+                    color: changePct >= 0
+                        ? AppColors.danger
+                        : AppColors.neonMint,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -344,8 +346,9 @@ class _SummaryRow extends StatelessWidget {
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: (iconColor ?? AppColors.textMuted)
-                    .withValues(alpha: 0.12),
+                color: (iconColor ?? AppColors.textMuted).withValues(
+                  alpha: 0.12,
+                ),
                 borderRadius: BorderRadius.circular(8),
               ),
               alignment: Alignment.center,
@@ -356,9 +359,8 @@ class _SummaryRow extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppColors.textMuted,
-              ),
+              style: Theme.of(context).textTheme.bodyMedium
+                  ?.copyWith(color: AppColors.textMuted),
             ),
           ),
           Text(
@@ -388,7 +390,10 @@ class _BudgetProgressCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final budgetsAsync = ref.watch(budgetsForMonthProvider(monthStart));
     final categories = ref.watch(categoriesProvider).value ?? const [];
-    final profiles = ref.watch(householdProfilesProvider).value ?? const [];
+    // allKnownProfilesProvider: a budget assigned to a since-departed member
+    // should still show their name. See docs/DECISIONS.md, "Profiles-
+    // tombstone gap".
+    final profiles = ref.watch(allKnownProfilesProvider).value ?? const [];
     final categoriesById = {for (final c in categories) c.id: c};
     final profilesById = {for (final p in profiles) p.id: p};
 
@@ -462,9 +467,8 @@ class _BudgetProgressRow extends ConsumerWidget {
                   ),
                   Text(
                     '${status.spent.format()} / ${status.effectiveBudget.format()}',
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: AppColors.textMuted,
-                    ),
+                    style: Theme.of(context).textTheme.bodySmall
+                        ?.copyWith(color: AppColors.textMuted),
                   ),
                 ],
               ),
@@ -511,10 +515,7 @@ class _NeonProgressBar extends StatelessWidget {
         child: Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [
-                color,
-                color.withValues(alpha: 0.7),
-              ],
+              colors: [color, color.withValues(alpha: 0.7)],
             ),
             borderRadius: BorderRadius.circular(4),
             boxShadow: [
@@ -541,7 +542,10 @@ class _MemberBreakdownCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
     final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
-    final profiles = ref.watch(householdProfilesProvider).value ?? const [];
+    // allKnownProfilesProvider: a departed member's spend earlier this
+    // month should still attribute to their name, not "Unknown". See
+    // docs/DECISIONS.md, "Profiles-tombstone gap".
+    final profiles = ref.watch(allKnownProfilesProvider).value ?? const [];
     final profilesById = {for (final p in profiles) p.id: p};
 
     return SectionCard(
@@ -624,8 +628,9 @@ class _MemberBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final barColor =
-        profile == null ? AppColors.neonMint : colourFromHex(profile!.colourHex);
+    final barColor = profile == null
+        ? AppColors.neonMint
+        : colourFromHex(profile!.colourHex);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
@@ -750,8 +755,9 @@ class _CategoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final catColor =
-        category == null ? Colors.grey : colourFromHex(category!.colourHex);
+    final catColor = category == null
+        ? Colors.grey
+        : colourFromHex(category!.colourHex);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -765,9 +771,7 @@ class _CategoryRow extends StatelessWidget {
             ),
             alignment: Alignment.center,
             child: Icon(
-              category == null
-                  ? Icons.category
-                  : iconForKey(category!.iconKey),
+              category == null ? Icons.category : iconForKey(category!.iconKey),
               size: 18,
               color: catColor,
             ),
@@ -814,7 +818,10 @@ class _RecentActivityCard extends ConsumerWidget {
     final repo = ref.watch(reportRepositoryProvider);
     final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
     final categories = ref.watch(categoriesProvider).value ?? const [];
-    final profiles = ref.watch(householdProfilesProvider).value ?? const [];
+    // allKnownProfilesProvider: a departed member's recent expense should
+    // still attribute to their name, not "Unknown". See
+    // docs/DECISIONS.md, "Profiles-tombstone gap".
+    final profiles = ref.watch(allKnownProfilesProvider).value ?? const [];
     final categoriesById = {for (final c in categories) c.id: c};
     final profilesById = {for (final p in profiles) p.id: p};
 
@@ -859,8 +866,9 @@ class _RecentExpenseRow extends StatelessWidget {
     final title = expense.note.isNotEmpty
         ? expense.note
         : (category?.name ?? 'Uncategorised');
-    final catColor =
-        category == null ? Colors.grey : colourFromHex(category!.colourHex);
+    final catColor = category == null
+        ? Colors.grey
+        : colourFromHex(category!.colourHex);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -876,9 +884,7 @@ class _RecentExpenseRow extends StatelessWidget {
           ),
           alignment: Alignment.center,
           child: Icon(
-            category == null
-                ? Icons.category
-                : iconForKey(category!.iconKey),
+            category == null ? Icons.category : iconForKey(category!.iconKey),
             color: catColor,
             size: 20,
           ),
@@ -891,10 +897,7 @@ class _RecentExpenseRow extends StatelessWidget {
             ? null
             : Text(
                 payer!.displayName,
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
         trailing: Text(
           expense.amount.format(),

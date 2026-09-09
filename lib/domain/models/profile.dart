@@ -9,7 +9,12 @@ part 'profile.g.dart';
 abstract class Profile with _$Profile {
   const factory Profile({
     required String id,
-    @JsonKey(name: 'household_id') required String householdId,
+    // Nullable, mirroring Postgres's `profiles.household_id` (nullable since
+    // T-M1.1): a member who leaves/is removed has this reset to null
+    // server-side, and `Profile.fromJson` must be able to deserialize that
+    // row rather than throw — see docs/DECISIONS.md, Gate M2 leave-household
+    // bug (2026-09-07).
+    @JsonKey(name: 'household_id') String? householdId,
     @JsonKey(name: 'display_name') required String displayName,
     @Default(MemberRole.member) MemberRole role,
     @JsonKey(name: 'colour_hex') @Default('#6750A4') String colourHex,

@@ -44,7 +44,10 @@ class _BudgetListScreenState extends ConsumerState<BudgetListScreen> {
   Widget build(BuildContext context) {
     final budgetsAsync = ref.watch(budgetsForMonthProvider(_month));
     final categories = ref.watch(categoriesProvider).value ?? const [];
-    final profiles = ref.watch(householdProfilesProvider).value ?? const [];
+    // allKnownProfilesProvider: a budget assigned to a since-departed member
+    // should still show their name. See docs/DECISIONS.md, "Profiles-
+    // tombstone gap".
+    final profiles = ref.watch(allKnownProfilesProvider).value ?? const [];
     final categoriesById = {for (final c in categories) c.id: c};
     final profilesById = {for (final p in profiles) p.id: p};
 

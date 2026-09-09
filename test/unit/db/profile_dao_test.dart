@@ -14,7 +14,7 @@ void main() {
     await db.profileDao.upsert(
       ProfilesCompanion.insert(
         id: 'u1',
-        householdId: 'h1',
+        householdId: const Value('h1'),
         displayName: 'Vineet',
         role: const Value('admin'),
         createdAt: now,
@@ -43,7 +43,7 @@ void main() {
       await db.profileDao.upsert(
         ProfilesCompanion.insert(
           id: 'u1',
-          householdId: 'h1',
+          householdId: const Value('h1'),
           displayName: 'Rupesh',
           createdAt: now,
           updatedAt: now,
@@ -52,6 +52,55 @@ void main() {
 
       final row = await stream.firstWhere((r) => r != null);
       expect(row!.displayName, 'Rupesh');
+    },
+  );
+
+  test('watchAllKnown includes a departed member that watchAll excludes '
+      '(docs/DECISIONS.md, "Profiles-tombstone gap")', () async {
+    final now = DateTime.utc(2026, 9, 7);
+    await db.profileDao.upsert(
+      ProfilesCompanion.insert(
+        id: 'u1',
+        householdId: const Value('h1'),
+        displayName: 'Vineet',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await db.profileDao.upsert(
+      ProfilesCompanion.insert(
+        id: 'u2',
+        householdId: const Value(null),
+        displayName: 'Rupesh',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+
+    final currentMembers = await db.profileDao.watchAll('h1').first;
+    expect(currentMembers.map((p) => p.id), ['u1']);
+
+    final everyKnownProfile = await db.profileDao.watchAllKnown().first;
+    expect(everyKnownProfile.map((p) => p.id).toSet(), {'u1', 'u2'});
+  });
+
+  test(
+    'hardDelete removes the row entirely (a deleted account\'s tombstone)',
+    () async {
+      final now = DateTime.utc(2026, 9, 9);
+      await db.profileDao.upsert(
+        ProfilesCompanion.insert(
+          id: 'u1',
+          householdId: const Value('h1'),
+          displayName: 'Vintya',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      final rowsDeleted = await db.profileDao.hardDelete('u1');
+      expect(rowsDeleted, 1);
+      expect(await db.profileDao.findById('u1'), isNull);
     },
   );
 }

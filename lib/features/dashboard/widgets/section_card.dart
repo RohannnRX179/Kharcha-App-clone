@@ -17,6 +17,7 @@ class SectionCard extends StatelessWidget {
   final String title;
   final Widget child;
   final VoidCallback? onSeeAll;
+
   /// Optional left-edge accent colour for visual differentiation.
   final Color? accentColor;
 
@@ -26,9 +27,7 @@ class SectionCard extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: AppColors.cardGradient,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.outline.withValues(alpha: 0.4),
-        ),
+        border: Border.all(color: AppColors.outline.withValues(alpha: 0.4)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.15),
@@ -52,8 +51,9 @@ class SectionCard extends StatelessWidget {
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      (accentColor ?? AppColors.neonMint)
-                          .withValues(alpha: 0.06),
+                      (accentColor ?? AppColors.neonMint).withValues(
+                        alpha: 0.06,
+                      ),
                       Colors.transparent,
                     ],
                   ),
@@ -116,17 +116,12 @@ class EmptySectionBody extends StatelessWidget {
     padding: const EdgeInsets.symmetric(vertical: 8),
     child: Row(
       children: [
-        Icon(
-          Icons.info_outline_rounded,
-          size: 16,
-          color: AppColors.textSubtle,
-        ),
+        Icon(Icons.info_outline_rounded, size: 16, color: AppColors.textSubtle),
         const SizedBox(width: 8),
         Text(
           message,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: AppColors.textSubtle,
-          ),
+          style: Theme.of(context).textTheme.bodyMedium
+              ?.copyWith(color: AppColors.textSubtle),
         ),
       ],
     ),

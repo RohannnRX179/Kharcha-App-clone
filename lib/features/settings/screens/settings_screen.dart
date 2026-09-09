@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../../core/config/app_config.dart';
 import '../../../core/db/database_provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/widgets/legal_links.dart';
 import '../../../data/repositories/household_repository.dart';
 import '../../../data/repositories/profile_repository.dart';
 import '../../../data/repositories/update_check_repository.dart';
@@ -208,6 +209,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               const _SettingsDivider(),
 
+              // ── Feedback ──────────────────────────
+              _SectionHeader('Feedback'),
+              _SettingsTile(
+                icon: Icons.feedback_outlined,
+                iconColor: AppColors.neonPurple,
+                title: 'Send feedback',
+                onTap: () => context.push(AppRoutes.feedback),
+              ),
+              const _SettingsDivider(),
+
               // ── Data ──────────────────────────────
               _SectionHeader('Data'),
               _SettingsTile(
@@ -230,6 +241,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
               const _SettingsDivider(),
 
+              // ── Account ───────────────────────────
+              _SectionHeader('Account'),
+              _SettingsTile(
+                icon: Icons.delete_forever_outlined,
+                iconColor: AppColors.danger,
+                title: 'Delete account',
+                onTap: () => context.push(AppRoutes.account),
+              ),
+              const _SettingsDivider(),
+
               // ── About ─────────────────────────────
               _SectionHeader('About'),
               const _AboutTile(),
@@ -238,6 +259,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 iconColor: AppColors.neonMint,
                 title: 'Check for updates',
                 onTap: _checkForUpdates,
+              ),
+              _SettingsTile(
+                icon: Icons.privacy_tip_outlined,
+                iconColor: AppColors.neonCyan,
+                title: 'Privacy policy',
+                onTap: () => openLegalPage(
+                  context,
+                  url: AppConfig.privacyPolicyUrl,
+                  label: 'Privacy Policy',
+                ),
+              ),
+              _SettingsTile(
+                icon: Icons.description_outlined,
+                iconColor: AppColors.neonCyan,
+                title: 'Terms',
+                onTap: () => openLegalPage(
+                  context,
+                  url: AppConfig.termsUrl,
+                  label: 'Terms',
+                ),
               ),
               const _SettingsDivider(),
 
@@ -294,10 +335,7 @@ class _SettingsTile extends StatelessWidget {
           ? null
           : Text(
               subtitle!,
-              style: TextStyle(
-                fontSize: 12,
-                color: AppColors.textSubtle,
-              ),
+              style: TextStyle(fontSize: 12, color: AppColors.textSubtle),
             ),
       trailing: onTap != null
           ? const Icon(
@@ -337,9 +375,7 @@ class _SettingsDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(horizontal: 20),
-    child: Divider(
-      color: AppColors.outline.withValues(alpha: 0.3),
-    ),
+    child: Divider(color: AppColors.outline.withValues(alpha: 0.3)),
   );
 }
 

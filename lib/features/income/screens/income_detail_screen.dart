@@ -113,10 +113,15 @@ class _IncomeDetailScreenState extends ConsumerState<IncomeDetailScreen> {
     final profilesAsync = ref.watch(householdProfilesProvider);
 
     if (!_canEdit) {
+      // allKnownProfilesProvider, not householdProfilesProvider: this is a
+      // display-only lookup, so a departed member's name should still show
+      // on their old income row — see docs/DECISIONS.md, "Profiles-tombstone
+      // gap".
+      final knownProfiles = ref.watch(allKnownProfilesProvider);
       return _ReadOnlyIncomeView(
         income: _existing!,
         categories: categoriesAsync.value ?? const [],
-        receiver: profilesAsync.value?.firstWhere(
+        receiver: knownProfiles.value?.firstWhere(
           (p) => p.id == _existing!.userId,
           orElse: () => domain.Profile(
             id: _existing!.userId,

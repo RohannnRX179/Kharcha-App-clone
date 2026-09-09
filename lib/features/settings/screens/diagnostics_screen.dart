@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -9,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/db/database_provider.dart';
 import '../../../core/logging/app_logger.dart';
+import '../../../routing/routes.dart';
 
 /// Outbox contents, failed items, log viewer (spec §9.8, §11.13, T-14.5) —
 /// "You can diagnose a sync failure on a family member's phone using only
@@ -35,6 +37,14 @@ class DiagnosticsScreen extends ConsumerWidget {
             icon: const Icon(Icons.ios_share),
             tooltip: 'Share logs',
             onPressed: () => _shareLogs(context),
+          ),
+          // Spec F-17: "a bug report can follow a log share" — this action
+          // sits right next to it rather than only in Settings, so a
+          // report can name what a shared log file already shows.
+          IconButton(
+            icon: const Icon(Icons.feedback_outlined),
+            tooltip: 'Send feedback',
+            onPressed: () => context.push(AppRoutes.feedback),
           ),
         ],
       ),

@@ -54,7 +54,10 @@ abstract class EntitySyncAdapter {
   /// (Phase 14+), so they are pull-only.
   bool get supportsPush;
 
-  /// False for `household`/`profile`: neither has a `deleted_at` column.
+  /// False for `household` (no `deleted_at` column). True for `profile`
+  /// since the deleted-account fix (docs/DECISIONS.md, "deleted-account
+  /// profile cache gap", 2026-09-09) even though nothing pushes it from the
+  /// client — the tombstone is written server-side, by `delete_my_records()`.
   bool get hasTombstones;
 
   Future<List<Map<String, dynamic>>> selectSince({
@@ -236,9 +239,9 @@ void _logConflictLoss(
 /// (2026-09-07) bug: that column gets advanced to server-receipt time after
 /// any offline stretch, making "newest edit wins" actually mean "whichever
 /// device's push arrived at the server later." See docs/DECISIONS.md.
-DateTime _updatedAtOf(Map<String, dynamic> json) => DateTime.parse(
-  (json['client_edited_at'] ?? json['updated_at']) as String,
-).toUtc();
+DateTime _updatedAtOf(Map<String, dynamic> json) =>
+    DateTime.parse((json['client_edited_at'] ?? json['updated_at']) as String)
+        .toUtc();
 
 class HouseholdSyncAdapter extends EntitySyncAdapter {
   HouseholdSyncAdapter(SupabaseClient client)
@@ -345,10 +348,17 @@ class ProfileSyncAdapter extends EntitySyncAdapter {
   bool get supportsPush => true;
 
   @override
-  bool get hasTombstones => false;
+  bool get hasTombstones => true;
 
   /// All household members, not just the signed-in one — needed so Phase 6
   /// can show a per-member breakdown for display names other than "me".
+  ///
+  /// Deliberately unfiltered by household (`filterByHousehold: false`):
+  /// RLS's `profile_visible_to_me()` already scopes this correctly,
+  /// including exposing a departed member's now-null-household row to
+  /// former housemates so their local cache actually learns they left — see
+  /// `TableRemoteDataSource.selectSince()`'s doc comment and
+  /// docs/DECISIONS.md, "Profiles-tombstone gap" (2026-09-07).
   @override
   Future<List<Map<String, dynamic>>> selectSince({
     required String householdId,
@@ -358,11 +368,21 @@ class ProfileSyncAdapter extends EntitySyncAdapter {
     householdId: householdId,
     cursor: cursor,
     limit: limit,
+    filterByHousehold: false,
   );
 
   @override
   Future<void> pullApply(AppDatabase db, Map<String, dynamic> json) async {
     final id = json['id'] as String;
+    // Deleting an account (F-18) tombstones its profile row instead of
+    // relying on auth.users' delete cascading it away (which left other
+    // devices' incremental pull with no signal at all that the member was
+    // gone — see docs/DECISIONS.md, "deleted-account profile cache gap",
+    // 2026-09-09). Mirrors every other tombstoned entity's pullApply.
+    if (json['deleted_at'] != null) {
+      await db.profileDao.hardDelete(id);
+      return;
+    }
     final remoteUpdatedAt = _updatedAtOf(json);
     final local = await db.profileDao.findById(id);
     if (_localWins(

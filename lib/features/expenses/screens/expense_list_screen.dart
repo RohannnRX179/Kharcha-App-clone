@@ -134,9 +134,15 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
     final categories = ref.watch(categoriesProvider).value ?? const [];
     final methods = ref.watch(paymentMethodsProvider).value ?? const [];
     final profiles = ref.watch(householdProfilesProvider).value ?? const [];
+    // allKnownProfilesProvider for the payer-name display map, not
+    // householdProfilesProvider (`profiles`, above — kept scoped to current
+    // members for the filter sheet's member picker): a departed member's
+    // name should still show on their old expense rows. See
+    // docs/DECISIONS.md, "Profiles-tombstone gap".
+    final knownProfiles = ref.watch(allKnownProfilesProvider).value ?? const [];
     final categoriesById = {for (final c in categories) c.id: c};
     final methodsById = {for (final m in methods) m.id: m};
-    final profilesById = {for (final p in profiles) p.id: p};
+    final profilesById = {for (final p in knownProfiles) p.id: p};
 
     return Scaffold(
       appBar: AppBar(
@@ -224,9 +230,8 @@ class _ExpenseListScreenState extends ConsumerState<ExpenseListScreen> {
                   children: [
                     Text(
                       'Total',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: AppColors.textMuted,
-                      ),
+                      style: Theme.of(context).textTheme.labelLarge
+                          ?.copyWith(color: AppColors.textMuted),
                     ),
                     Text(
                       total.format(),
@@ -418,8 +423,9 @@ class _ExpenseRow extends ConsumerWidget {
     final title = expense.note.isNotEmpty
         ? expense.note
         : (category?.name ?? 'Uncategorised');
-    final catColor =
-        category == null ? Colors.grey : colourFromHex(category!.colourHex);
+    final catColor = category == null
+        ? Colors.grey
+        : colourFromHex(category!.colourHex);
 
     return Dismissible(
       key: ValueKey(expense.id),
@@ -480,29 +486,21 @@ class _ExpenseRow extends ConsumerWidget {
           ),
           alignment: Alignment.center,
           child: Icon(
-            category == null
-                ? Icons.category
-                : iconForKey(category!.iconKey),
+            category == null ? Icons.category : iconForKey(category!.iconKey),
             color: catColor,
             size: 20,
           ),
         ),
         title: Text(
           title,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 14,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
         ),
         subtitle: Row(
           children: [
             if (payer != null) ...[
               Text(
                 payer!.displayName,
-                style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12),
               ),
               if (method != null) ...[
                 Padding(
@@ -591,17 +589,15 @@ class _EmptyState extends StatelessWidget {
               hasFilters
                   ? 'No expenses match these filters.'
                   : 'No expenses yet',
-              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                color: AppColors.textMuted,
-              ),
+              style: Theme.of(context).textTheme.titleSmall
+                  ?.copyWith(color: AppColors.textMuted),
             ),
             if (!hasFilters) ...[
               const SizedBox(height: 4),
               Text(
                 'Tap + to add your first one.',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: AppColors.textSubtle,
-                ),
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: AppColors.textSubtle),
               ),
             ],
             if (hasFilters) ...[

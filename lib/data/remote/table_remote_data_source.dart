@@ -14,15 +14,28 @@ class TableRemoteDataSource {
 
   /// Rows for [householdId] updated strictly after [cursor], oldest first,
   /// capped at [limit] (spec §9.6: page until fewer than 500 rows return).
+  ///
+  /// [filterByHousehold] defaults to true for every table except `profiles`.
+  /// A departed member's `household_id` goes null server-side (see
+  /// `leave_household()`), but `profile_visible_to_me()`'s RLS policy still
+  /// exposes that row to former housemates who share an expense/income with
+  /// them — an `.eq('household_id', ...)` filter here would structurally
+  /// exclude it from every future pull regardless, permanently stranding a
+  /// stale local copy that still looks like an active member. Passing false
+  /// leaves visibility entirely to RLS, which is already correctly scoped;
+  /// see docs/DECISIONS.md, "Profiles-tombstone gap" (2026-09-07) for the
+  /// live-verified trace this fixes.
   Future<List<Map<String, dynamic>>> selectSince({
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async {
-    final rows = await _client
-        .from(table)
-        .select()
-        .eq('household_id', householdId)
+    var query = _client.from(table).select();
+    if (filterByHousehold) {
+      query = query.eq('household_id', householdId);
+    }
+    final rows = await query
         .gt('updated_at', cursor.toIso8601String())
         .order('updated_at')
         .limit(limit);

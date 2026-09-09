@@ -59,10 +59,15 @@ Deno.serve(async (req) => {
   let memberCount = 0;
   let adminCount = 0;
   if (householdId) {
+    // Excludes already-tombstoned former members (deleted_at set, see
+    // migration 0017) — their profile row keeps its household_id
+    // deliberately so other devices' sync can still pull the tombstone,
+    // but they must not count toward "last member"/"last admin" checks.
     const { data: members, error: membersErr } = await admin
       .from("profiles")
       .select("id, role")
-      .eq("household_id", householdId);
+      .eq("household_id", householdId)
+      .is("deleted_at", null);
     if (membersErr) return json({ error: "lookup_failed" }, 500);
     memberCount = members.length;
     adminCount = members.filter((m) => m.role === "admin").length;

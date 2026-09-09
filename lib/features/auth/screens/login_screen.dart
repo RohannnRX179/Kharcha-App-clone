@@ -80,11 +80,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFF0A1220),
-              AppColors.ink,
-              AppColors.ink,
-            ],
+            colors: [Color(0xFF0A1220), AppColors.ink, AppColors.ink],
           ),
         ),
         child: SafeArea(
@@ -114,10 +110,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       const SizedBox(height: 8),
                       Text(
                         'A calmer way to keep household\nspending clear.',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AppColors.textMuted,
-                          height: 1.5,
-                        ),
+                        style: Theme.of(context).textTheme.bodyMedium
+                            ?.copyWith(color: AppColors.textMuted, height: 1.5),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 40),
@@ -128,7 +122,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         textInputAction: TextInputAction.next,
                         decoration: const InputDecoration(
                           labelText: 'Email',
-                          prefixIcon: Icon(Icons.mail_outline_rounded, size: 20),
+                          prefixIcon: Icon(
+                            Icons.mail_outline_rounded,
+                            size: 20,
+                          ),
                         ),
                         validator: (value) {
                           final trimmed = value?.trim() ?? '';
@@ -148,8 +145,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         onFieldSubmitted: (_) => _submit(),
                         decoration: InputDecoration(
                           labelText: 'Password',
-                          prefixIcon:
-                              const Icon(Icons.lock_outline_rounded, size: 20),
+                          prefixIcon: const Icon(
+                            Icons.lock_outline_rounded,
+                            size: 20,
+                          ),
                           suffixIcon: IconButton(
                             icon: Icon(
                               _obscurePassword

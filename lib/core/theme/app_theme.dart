@@ -17,13 +17,13 @@ class AppColors {
   static const outlineSubtle = Color(0xFF1E2732);
 
   // ── Neon Accent Palette ─────────────────────────────────────────────────
-  static const neonMint = Color(0xFF00F5A0);        // primary CTA
-  static const neonMintDeep = Color(0xFF00C97B);     // pressed / gradient end
-  static const neonMintMuted = Color(0xFF7EDCB5);    // secondary text
-  static const neonCyan = Color(0xFF00D4FF);          // info / links
-  static const neonPurple = Color(0xFFB388FF);        // charts accent 2
-  static const neonPink = Color(0xFFFF6B9D);          // charts accent 3
-  static const neonAmber = Color(0xFFFFD166);         // warnings
+  static const neonMint = Color(0xFF00F5A0); // primary CTA
+  static const neonMintDeep = Color(0xFF00C97B); // pressed / gradient end
+  static const neonMintMuted = Color(0xFF7EDCB5); // secondary text
+  static const neonCyan = Color(0xFF00D4FF); // info / links
+  static const neonPurple = Color(0xFFB388FF); // charts accent 2
+  static const neonPink = Color(0xFFFF6B9D); // charts accent 3
+  static const neonAmber = Color(0xFFFFD166); // warnings
 
   // ── Legacy aliases (keeps existing references compiling) ────────────────
   static const green = neonMint;
@@ -188,9 +188,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          side: BorderSide(
-            color: AppColors.neonMint.withValues(alpha: 0.4),
-          ),
+          side: BorderSide(color: AppColors.neonMint.withValues(alpha: 0.4)),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
@@ -199,10 +197,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
           ),
-          textStyle: const TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 13,
-          ),
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
@@ -246,13 +241,9 @@ class AppTheme {
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surfaceBright,
         selectedColor: AppColors.neonMint.withValues(alpha: 0.15),
-        side: BorderSide(
-          color: AppColors.outline.withValues(alpha: 0.5),
-        ),
+        side: BorderSide(color: AppColors.outline.withValues(alpha: 0.5)),
         labelStyle: const TextStyle(fontSize: 13),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       progressIndicatorTheme: const ProgressIndicatorThemeData(
         color: AppColors.neonMint,
@@ -267,9 +258,7 @@ class AppTheme {
       dialogTheme: DialogThemeData(
         backgroundColor: AppColors.surfaceRaised,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
     );
   }

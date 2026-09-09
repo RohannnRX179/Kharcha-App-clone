@@ -76,9 +76,7 @@ class _NavButton extends StatelessWidget {
       width: 34,
       height: 34,
       decoration: BoxDecoration(
-        color: onPressed != null
-            ? AppColors.surfaceBright
-            : Colors.transparent,
+        color: onPressed != null ? AppColors.surfaceBright : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
       ),
       child: IconButton(
@@ -117,10 +115,7 @@ class _MonthYearPickerDialogState extends State<_MonthYearPickerDialog> {
           ),
           Text(
             '$_year',
-            style: const TextStyle(
-              fontWeight: FontWeight.w700,
-              fontSize: 20,
-            ),
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
           ),
           _NavButton(
             icon: Icons.chevron_right_rounded,

@@ -14,9 +14,7 @@ class AppSurface extends StatelessWidget {
       decoration: BoxDecoration(
         gradient: AppColors.cardGradient,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: AppColors.outline.withValues(alpha: 0.5),
-        ),
+        border: Border.all(color: AppColors.outline.withValues(alpha: 0.5)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.2),

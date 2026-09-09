@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'core/constants/app_constants.dart';
@@ -10,12 +11,14 @@ import 'core/notifications/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'data/remote/supabase_client_provider.dart';
 import 'data/repositories/budget_alert_service.dart';
+import 'data/repositories/household_repository.dart';
 import 'data/repositories/notification_scheduler.dart';
 import 'data/repositories/profile_repository.dart';
 import 'data/repositories/update_check_repository.dart';
 import 'data/sync/sync_engine.dart';
 import 'routing/app_router.dart';
 import 'routing/root_navigator_key.dart';
+import 'routing/routes.dart';
 
 /// Also wires 2 of the sync engine's 6 trigger points (spec §9.6, T-4.5):
 /// app start once auth resolves (1) and app resume, throttled to once per
@@ -60,6 +63,13 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
     // T-14.6: at most once per 24h (the repository's own throttle) — see
     // `UpdateCheckRepository.checkForUpdates`.
     ref.read(updateCheckControllerProvider.notifier).check();
+
+    // D21/T-M3.4: liveness ping, at most once per hour (the repository's
+    // own throttle) — a harmless no-op if nothing is signed in yet, same
+    // precedent as `engine.sync()` above.
+    if (ref.read(currentSessionProvider) != null) {
+      ref.read(householdRepositoryProvider).touchActivityIfDue();
+    }
 
     // T-13.4: deep-link a tapped notification into its target route. A
     // foreground tap arrives on this stream; a cold-start tap (the
@@ -106,6 +116,9 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
       ref.read(notificationSchedulerProvider).runAll(resumeHouseholdId);
     }
     ref.read(updateCheckControllerProvider.notifier).check();
+    if (ref.read(currentSessionProvider) != null) {
+      ref.read(householdRepositoryProvider).touchActivityIfDue();
+    }
   }
 
   Future<void> _showBlockedUpdateDialog(Blocked blocked) {
@@ -140,10 +153,41 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
   @override
   Widget build(BuildContext context) {
     // Trigger 1: kick a sync as soon as a session exists (sign-in, or an
-    // already-persisted session resolving at boot).
+    // already-persisted session resolving at boot). Calls `start()` (not
+    // just `sync()`) because `SignOutController` calls `stop()` on sign-out,
+    // which latches `_stopped = true` — without re-arming it here, every
+    // sync (periodic, connectivity, manual, post-RPC) would silently no-op
+    // for the rest of the process after any sign-out→sign-in cycle. `start`
+    // is idempotent, so this is safe to call on every sign-in, including the
+    // very first one where `initState` already called it.
     ref.listen(currentSessionProvider, (previous, next) {
       if (previous == null && next != null) {
-        ref.read(syncEngineProvider).sync();
+        final engine = ref.read(syncEngineProvider);
+        engine.start();
+        engine.sync();
+        // D21/T-M3.4: `initState`'s boot-time liveness ping (above) is a
+        // no-op for a signed-out cold start, and `didChangeAppLifecycleState`
+        // only fires on a background→foreground transition — neither covers
+        // signing in during the app's very first foreground session, so
+        // that case would otherwise never get a first ping until the app is
+        // backgrounded and resumed at least once. Caught live 2026-09-08:
+        // `profiles.last_seen_at` stayed NULL through a real sign-in.
+        ref.read(householdRepositoryProvider).touchActivityIfDue();
+      }
+    });
+
+    // Password-recovery deep link (`AppConstants.authCallbackUrl`,
+    // `AuthRepository.resetPassword`): Supabase establishes a real,
+    // narrowly-scoped session and fires this event the moment the tapped
+    // email link lands back in the app. Routed here rather than from
+    // `app_router.dart`'s `redirect` because `redirect` only re-runs on a
+    // navigation attempt or a `refreshListenable` tick — this reacts to the
+    // event directly, the same way `didChangeAppLifecycleState` needs an
+    // explicit push rather than waiting for one.
+    ref.listen(authStateChangesProvider, (previous, next) {
+      if (next.value?.event == AuthChangeEvent.passwordRecovery) {
+        final context = rootNavigatorKey.currentContext;
+        if (context != null) GoRouter.of(context).go(AppRoutes.resetPassword);
       }
     });
 

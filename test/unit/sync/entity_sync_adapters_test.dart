@@ -48,6 +48,7 @@ class FakeCategoryRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -77,6 +78,7 @@ class FakePaymentMethodRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -106,6 +108,7 @@ class FakeIncomeRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -135,6 +138,7 @@ class FakeBudgetRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -164,6 +168,7 @@ class FakeRecurringRuleRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -193,6 +198,7 @@ class FakeAttachmentRemoteDataSource extends _FakeRemote
     required String householdId,
     required DateTime cursor,
     int limit = 500,
+    bool filterByHousehold = true,
   }) async => const [];
   @override
   Future<void> softDelete(String id, DateTime now) async {
@@ -1064,6 +1070,7 @@ void main() {
     Map<String, dynamic> json({
       required DateTime updatedAt,
       String displayName = 'remote name',
+      DateTime? deletedAt,
     }) => {
       'id': id,
       'household_id': householdId,
@@ -1073,6 +1080,7 @@ void main() {
       'is_active': true,
       'created_at': updatedAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
+      'deleted_at': deletedAt?.toIso8601String(),
     };
 
     setUp(() {
@@ -1083,7 +1091,7 @@ void main() {
         db.profileDao.upsert(
           ProfilesCompanion.insert(
             id: id,
-            householdId: householdId,
+            householdId: Value(householdId),
             displayName: 'local name',
             createdAt: updatedAt,
             updatedAt: updatedAt,
@@ -1093,12 +1101,30 @@ void main() {
           ),
         );
 
-    test('has no tombstones and does not support delete', () {
-      expect(adapter.hasTombstones, isFalse);
-      expect(
-        () => adapter.pushSoftDelete(id, DateTime.utc(2026, 1, 1)),
-        throwsUnsupportedError,
+    test(
+      'has tombstones (server-written) but does not support push delete',
+      () {
+        expect(adapter.hasTombstones, isTrue);
+        expect(
+          () => adapter.pushSoftDelete(id, DateTime.utc(2026, 1, 1)),
+          throwsUnsupportedError,
+        );
+      },
+    );
+
+    test('tombstone (a deleted account) hard-deletes the local row', () async {
+      await insertDirtyLocal(
+        DateTime.utc(2026, 1, 1),
+        DateTime.utc(2026, 1, 1),
       );
+      await adapter.pullApply(
+        db,
+        json(
+          updatedAt: DateTime.utc(2026, 1, 2),
+          deletedAt: DateTime.utc(2026, 1, 2),
+        ),
+      );
+      expect(await db.profileDao.findById(id), isNull);
     });
 
     test('a newer dirty local row is kept', () async {

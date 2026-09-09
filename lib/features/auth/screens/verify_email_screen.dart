@@ -24,12 +24,21 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen>
     with WidgetsBindingObserver {
   static const _resendCooldown = Duration(seconds: 60);
   static const _pollInterval = Duration(seconds: 5);
+  // Fallback safety net for cases the deep link doesn't cleanly handle
+  // (Android's link-picker not choosing this app, a friend closing the
+  // browser tab instead of letting the redirect run): if a resume still
+  // finds this screen mounted this long after it first appeared,
+  // confirmation almost certainly already succeeded server-side (tapping
+  // the link confirms it immediately) even though this device never
+  // received the session — nudge toward the always-safe manual sign-in.
+  static const _resumeNudgeGrace = Duration(seconds: 20);
 
   Timer? _pollTimer;
   Timer? _cooldownTicker;
   int _cooldownSeconds = 0;
   bool _resending = false;
   bool _checkingConfirmed = false;
+  final DateTime _shownAt = DateTime.now();
 
   @override
   void initState() {
@@ -47,8 +56,29 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _checkConfirmed();
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (state != AppLifecycleState.resumed) return;
+    await _checkConfirmed();
+    // Still here after the check (i.e. not confirmed-and-redirected) and
+    // past the grace period: this resume is very likely the user coming
+    // back from tapping the email link in their browser, but the deep
+    // link didn't hand this device a session.
+    if (mounted && DateTime.now().difference(_shownAt) > _resumeNudgeGrace) {
+      _showSignInNudge();
+    }
+  }
+
+  void _showSignInNudge() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 5),
+        content: const Text(
+          'If you tapped the confirmation link, try signing in — your '
+          'account may already be ready.',
+        ),
+        action: SnackBarAction(label: 'Sign in', onPressed: _signInInstead),
+      ),
+    );
   }
 
   /// Swallows every outcome except "confirmed" — see
@@ -101,6 +131,18 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen>
   Future<void> _wrongAddress() async {
     await ref.read(authRepositoryProvider).signOut();
     if (mounted) context.go(AppRoutes.signup);
+  }
+
+  /// Permanent fallback (spec plan, 2026-09-09 auth-email fix): confirming
+  /// the email server-side happens the instant the link is tapped, whether
+  /// or not this device ever receives a session back for it — a plain
+  /// sign-in with the same credentials always works once that's true, so
+  /// this is never a dead end even if the deep link misfires entirely.
+  /// Signs out first because a lingering unconfirmed session would make the
+  /// router's own redirect bounce straight back to this screen.
+  Future<void> _signInInstead() async {
+    await ref.read(authRepositoryProvider).signOut();
+    if (mounted) context.go(AppRoutes.login);
   }
 
   @override
@@ -160,6 +202,10 @@ class _VerifyEmailScreenState extends ConsumerState<VerifyEmailScreen>
                           ),
                   ),
                   const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _signInInstead,
+                    child: const Text('Already tapped the link? Sign in'),
+                  ),
                   TextButton(
                     onPressed: _wrongAddress,
                     child: const Text('Wrong address? Start again'),

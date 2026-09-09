@@ -159,11 +159,16 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
     final profilesAsync = ref.watch(householdProfilesProvider);
 
     if (!_canEdit) {
+      // allKnownProfilesProvider, not householdProfilesProvider: this is a
+      // display-only lookup, so a departed member's name should still show
+      // on their old expense — see docs/DECISIONS.md, "Profiles-tombstone
+      // gap".
+      final knownProfiles = ref.watch(allKnownProfilesProvider);
       return _ReadOnlyExpenseView(
         expense: _existing!,
         categories: categoriesAsync.value ?? const [],
         methods: methodsAsync.value ?? const [],
-        payer: profilesAsync.value?.firstWhere(
+        payer: knownProfiles.value?.firstWhere(
           (p) => p.id == _existing!.userId,
           orElse: () => domain.Profile(
             id: _existing!.userId,
@@ -209,7 +214,10 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
             onSelected: (id) => setState(() => _categoryId = id),
           ),
           const SizedBox(height: 28),
-          _SectionLabel(icon: Icons.account_balance_wallet_rounded, label: 'Payment method'),
+          _SectionLabel(
+            icon: Icons.account_balance_wallet_rounded,
+            label: 'Payment method',
+          ),
           const SizedBox(height: 10),
           _PaymentMethodChips(
             methods: methods,
@@ -217,7 +225,10 @@ class _ExpenseDetailScreenState extends ConsumerState<ExpenseDetailScreen> {
             onSelected: (id) => setState(() => _paymentMethodId = id),
           ),
           const SizedBox(height: 28),
-          _SectionLabel(icon: Icons.calendar_today_rounded, label: 'Date & time'),
+          _SectionLabel(
+            icon: Icons.calendar_today_rounded,
+            label: 'Date & time',
+          ),
           const SizedBox(height: 10),
           _DateTimePicker(
             spentAt: _spentAt,
@@ -546,7 +557,10 @@ class _AmountField extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           borderSide: const BorderSide(color: AppColors.neonMint, width: 1.5),
         ),
-        contentPadding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+        contentPadding: const EdgeInsets.symmetric(
+          vertical: 24,
+          horizontal: 20,
+        ),
       ),
     );
   }

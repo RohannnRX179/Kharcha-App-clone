@@ -1,6 +1,7 @@
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../core/errors/error_mapper.dart';
 import '../../core/errors/failure.dart';
 import '../../core/result/result.dart';
@@ -58,6 +59,7 @@ class AuthRepository {
         email: email,
         password: password,
         data: {'display_name': displayName},
+        emailRedirectTo: AppConstants.authCallbackUrl,
       );
       return const Result.ok(null);
     } catch (error) {
@@ -76,7 +78,11 @@ class AuthRepository {
   /// one re-triggers the original confirmation link, not a password reset.
   Future<Result<void, Failure>> resendConfirmationEmail(String email) async {
     try {
-      await _client.auth.resend(email: email, type: OtpType.signup);
+      await _client.auth.resend(
+        email: email,
+        type: OtpType.signup,
+        emailRedirectTo: AppConstants.authCallbackUrl,
+      );
       return const Result.ok(null);
     } catch (error) {
       return Result.err(ErrorMapper.map(error));
@@ -112,7 +118,10 @@ class AuthRepository {
 
   Future<Result<void, Failure>> resetPassword(String email) async {
     try {
-      await _client.auth.resetPasswordForEmail(email);
+      await _client.auth.resetPasswordForEmail(
+        email,
+        redirectTo: AppConstants.authCallbackUrl,
+      );
       return const Result.ok(null);
     } catch (error) {
       return Result.err(ErrorMapper.map(error));

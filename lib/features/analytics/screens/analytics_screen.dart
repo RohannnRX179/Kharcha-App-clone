@@ -100,19 +100,15 @@ class _LegendDot extends StatelessWidget {
             color: color,
             shape: BoxShape.circle,
             boxShadow: [
-              BoxShadow(
-                color: color.withValues(alpha: 0.4),
-                blurRadius: 4,
-              ),
+              BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 4),
             ],
           ),
         ),
         const SizedBox(width: 6),
         Text(
           label,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: AppColors.textMuted,
-          ),
+          style: Theme.of(context).textTheme.bodySmall
+              ?.copyWith(color: AppColors.textMuted),
         ),
       ],
     );
@@ -379,7 +375,11 @@ class _MemberComparisonChart extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final repo = ref.watch(reportRepositoryProvider);
     final householdId = ref.watch(currentHouseholdIdProvider) ?? '';
-    final profiles = ref.watch(householdProfilesProvider).value ?? const [];
+    // allKnownProfilesProvider: a member who left partway through the
+    // 6-month window must still show their name and history in this chart,
+    // not be silently dropped from it. See docs/DECISIONS.md,
+    // "Profiles-tombstone gap".
+    final profiles = ref.watch(allKnownProfilesProvider).value ?? const [];
 
     return StreamBuilder<List<MemberMonthTotal>>(
       stream: repo.watchMemberMonthlyTrend(

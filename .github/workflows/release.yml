@@ -2,6 +2,8 @@ name: Release APK
 on:
   push:
     tags: ['v*']
+permissions:
+  contents: write
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -29,8 +31,12 @@ jobs:
           cat > config/prod.json <<EOF
           { "SUPABASE_URL": "${{ secrets.SUPABASE_URL }}",
             "SUPABASE_ANON_KEY": "${{ secrets.SUPABASE_ANON_KEY }}",
-            "APP_ENV": "prod" }
+            "APP_ENV": "prod",
+            "PRIVACY_POLICY_URL": "https://vineet2102.github.io/Kharcha-App/privacy.html",
+            "TERMS_URL": "https://vineet2102.github.io/Kharcha-App/terms.html" }
           EOF
       - run: flutter build apk --release --dart-define-from-file=config/prod.json
       - uses: softprops/action-gh-release@v2
-        with: { files: build/app/outputs/flutter-apk/app-release.apk }
+        with:
+          files: build/app/outputs/flutter-apk/app-release.apk
+          body_path: docs/RELEASE_NOTES.md

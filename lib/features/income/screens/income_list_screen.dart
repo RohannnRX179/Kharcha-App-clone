@@ -31,7 +31,11 @@ class IncomeListScreen extends ConsumerWidget {
         ?.id;
     final isAdmin = ref.watch(currentProfileProvider).value?.isAdmin ?? false;
     final categories = ref.watch(categoriesProvider).value ?? const [];
-    final profiles = ref.watch(householdProfilesProvider).value ?? const [];
+    // allKnownProfilesProvider, not householdProfilesProvider: this is a
+    // display-only lookup (receiver name on each row), so a departed
+    // member's name should still show on their old income. See
+    // docs/DECISIONS.md, "Profiles-tombstone gap".
+    final profiles = ref.watch(allKnownProfilesProvider).value ?? const [];
     final categoriesById = {for (final c in categories) c.id: c};
     final profilesById = {for (final p in profiles) p.id: p};
 
