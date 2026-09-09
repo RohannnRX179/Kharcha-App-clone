@@ -236,9 +236,9 @@ void _logConflictLoss(
 /// (2026-09-07) bug: that column gets advanced to server-receipt time after
 /// any offline stretch, making "newest edit wins" actually mean "whichever
 /// device's push arrived at the server later." See docs/DECISIONS.md.
-DateTime _updatedAtOf(Map<String, dynamic> json) => DateTime.parse(
-  (json['client_edited_at'] ?? json['updated_at']) as String,
-).toUtc();
+DateTime _updatedAtOf(Map<String, dynamic> json) =>
+    DateTime.parse((json['client_edited_at'] ?? json['updated_at']) as String)
+        .toUtc();
 
 class HouseholdSyncAdapter extends EntitySyncAdapter {
   HouseholdSyncAdapter(SupabaseClient client)

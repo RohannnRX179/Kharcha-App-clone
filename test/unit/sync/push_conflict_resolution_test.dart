@@ -256,8 +256,22 @@ void main() {
     // Rupesh's local edit correctly compares as newer.
     final base = DateTime.utc(2026, 9, 7, 1, 43); // 07:13 IST
     final vineetsTrueEditTime = base;
-    final vineetsServerReceiptTime = DateTime.utc(2026, 9, 7, 1, 46, 42); // 07:16:42 IST
-    final rupeshsTrueEditTime = DateTime.utc(2026, 9, 7, 1, 46, 21); // 07:16:21 IST
+    final vineetsServerReceiptTime = DateTime.utc(
+      2026,
+      9,
+      7,
+      1,
+      46,
+      42,
+    ); // 07:16:42 IST
+    final rupeshsTrueEditTime = DateTime.utc(
+      2026,
+      9,
+      7,
+      1,
+      46,
+      21,
+    ); // 07:16:21 IST
 
     await insertLocal(
       updatedAt: rupeshsTrueEditTime,
@@ -274,7 +288,10 @@ void main() {
     );
 
     await expectLater(
-      adapter.pushUpsert(db, payloadFor(rupeshsTrueEditTime, note: 'Rupesh 222')),
+      adapter.pushUpsert(
+        db,
+        payloadFor(rupeshsTrueEditTime, note: 'Rupesh 222'),
+      ),
       throwsA(isA<SyncConflictRetryException>()),
       reason:
           "Rupesh's edit is genuinely newer than Vineet's, so it must "

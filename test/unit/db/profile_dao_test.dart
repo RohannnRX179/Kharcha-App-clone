@@ -55,38 +55,32 @@ void main() {
     },
   );
 
-  test(
-    'watchAllKnown includes a departed member that watchAll excludes '
-    '(docs/DECISIONS.md, "Profiles-tombstone gap")',
-    () async {
-      final now = DateTime.utc(2026, 9, 7);
-      await db.profileDao.upsert(
-        ProfilesCompanion.insert(
-          id: 'u1',
-          householdId: const Value('h1'),
-          displayName: 'Vineet',
-          createdAt: now,
-          updatedAt: now,
-        ),
-      );
-      await db.profileDao.upsert(
-        ProfilesCompanion.insert(
-          id: 'u2',
-          householdId: const Value(null),
-          displayName: 'Rupesh',
-          createdAt: now,
-          updatedAt: now,
-        ),
-      );
+  test('watchAllKnown includes a departed member that watchAll excludes '
+      '(docs/DECISIONS.md, "Profiles-tombstone gap")', () async {
+    final now = DateTime.utc(2026, 9, 7);
+    await db.profileDao.upsert(
+      ProfilesCompanion.insert(
+        id: 'u1',
+        householdId: const Value('h1'),
+        displayName: 'Vineet',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
+    await db.profileDao.upsert(
+      ProfilesCompanion.insert(
+        id: 'u2',
+        householdId: const Value(null),
+        displayName: 'Rupesh',
+        createdAt: now,
+        updatedAt: now,
+      ),
+    );
 
-      final currentMembers = await db.profileDao.watchAll('h1').first;
-      expect(currentMembers.map((p) => p.id), ['u1']);
+    final currentMembers = await db.profileDao.watchAll('h1').first;
+    expect(currentMembers.map((p) => p.id), ['u1']);
 
-      final everyKnownProfile = await db.profileDao.watchAllKnown().first;
-      expect(
-        everyKnownProfile.map((p) => p.id).toSet(),
-        {'u1', 'u2'},
-      );
-    },
-  );
+    final everyKnownProfile = await db.profileDao.watchAllKnown().first;
+    expect(everyKnownProfile.map((p) => p.id).toSet(), {'u1', 'u2'});
+  });
 }

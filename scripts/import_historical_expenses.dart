@@ -75,7 +75,10 @@ String? _readLine({bool hidden = false}) {
   return line;
 }
 
-Map<String, String> _lookupByLowerName(List<Map<String, dynamic>> rows, String nameKey) {
+Map<String, String> _lookupByLowerName(
+  List<Map<String, dynamic>> rows,
+  String nameKey,
+) {
   final map = <String, String>{};
   for (final r in rows) {
     map[(r[nameKey] as String).trim().toLowerCase()] = r['id'] as String;
@@ -85,8 +88,10 @@ Map<String, String> _lookupByLowerName(List<Map<String, dynamic>> rows, String n
 
 void main(List<String> args) async {
   if (args.isEmpty) {
-    _fail('Usage: dart run scripts/import_historical_expenses.dart <csv-path> '
-        '[--config config/prod.json] [--yes] [--skip-invalid]');
+    _fail(
+      'Usage: dart run scripts/import_historical_expenses.dart <csv-path> '
+      '[--config config/prod.json] [--yes] [--skip-invalid]',
+    );
   }
 
   final csvPath = args.first;
@@ -114,10 +119,13 @@ void main(List<String> args) async {
 
   final configFile = File(configPath);
   if (!configFile.existsSync()) _fail('Config file not found: $configPath');
-  final config = jsonDecode(configFile.readAsStringSync()) as Map<String, dynamic>;
+  final config =
+      jsonDecode(configFile.readAsStringSync()) as Map<String, dynamic>;
   final supabaseUrl = config['SUPABASE_URL'] as String?;
   final supabaseAnonKey = config['SUPABASE_ANON_KEY'] as String?;
-  if (supabaseUrl == null || supabaseAnonKey == null || supabaseUrl.contains('<ref>')) {
+  if (supabaseUrl == null ||
+      supabaseAnonKey == null ||
+      supabaseUrl.contains('<ref>')) {
     _fail('$configPath is missing a real SUPABASE_URL/SUPABASE_ANON_KEY.');
   }
 
@@ -126,10 +134,14 @@ void main(List<String> args) async {
   final table = Csv().decode(raw);
   if (table.isEmpty) _fail('CSV is empty.');
 
-  final header = table.first.map((c) => c.toString().trim().toLowerCase()).toList();
+  final header = table.first
+      .map((c) => c.toString().trim().toLowerCase())
+      .toList();
   const required = ['date', 'member', 'amount_inr'];
   for (final col in required) {
-    if (!header.contains(col)) _fail('CSV header is missing required column "$col".');
+    if (!header.contains(col)) {
+      _fail('CSV header is missing required column "$col".');
+    }
   }
   int colIndex(String name) => header.indexOf(name);
 
@@ -138,7 +150,9 @@ void main(List<String> args) async {
   for (var i = 1; i < table.length; i++) {
     final lineNumber = i + 1; // 1-indexed, +1 for the header row
     final cols = table[i];
-    if (cols.length == 1 && cols.first.toString().trim().isEmpty) continue; // blank line
+    if (cols.length == 1 && cols.first.toString().trim().isEmpty) {
+      continue; // blank line
+    }
 
     String col(String name) {
       final idx = colIndex(name);
@@ -149,14 +163,18 @@ void main(List<String> args) async {
     final date = col('date');
     final dateOk = RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(date);
     if (!dateOk) {
-      parseErrors.add('Line $lineNumber: invalid or missing date "$date" (expected yyyy-MM-dd).');
+      parseErrors.add(
+        'Line $lineNumber: invalid or missing date "$date" (expected yyyy-MM-dd).',
+      );
       continue;
     }
 
     var time = col('time');
     if (time.isEmpty) time = '12:00';
     if (!RegExp(r'^\d{2}:\d{2}$').hasMatch(time)) {
-      parseErrors.add('Line $lineNumber: invalid time "$time" (expected HH:mm).');
+      parseErrors.add(
+        'Line $lineNumber: invalid time "$time" (expected HH:mm).',
+      );
       continue;
     }
 
@@ -169,7 +187,9 @@ void main(List<String> args) async {
     final amountStr = col('amount_inr');
     final amount = double.tryParse(amountStr);
     if (amount == null || amount <= 0) {
-      parseErrors.add('Line $lineNumber: invalid amount_inr "$amountStr" (must be a positive number).');
+      parseErrors.add(
+        'Line $lineNumber: invalid amount_inr "$amountStr" (must be a positive number).',
+      );
       continue;
     }
     final amountPaise = (amount * 100).round();
@@ -179,26 +199,32 @@ void main(List<String> args) async {
     final merchant = col('merchant');
     final note = col('note');
 
-    rows.add(_Row(
-      lineNumber: lineNumber,
-      date: date,
-      time: time,
-      member: member,
-      amountPaise: amountPaise,
-      category: category.isEmpty ? null : category,
-      paymentMethod: paymentMethod.isEmpty ? null : paymentMethod,
-      merchant: merchant,
-      note: note,
-    ));
+    rows.add(
+      _Row(
+        lineNumber: lineNumber,
+        date: date,
+        time: time,
+        member: member,
+        amountPaise: amountPaise,
+        category: category.isEmpty ? null : category,
+        paymentMethod: paymentMethod.isEmpty ? null : paymentMethod,
+        merchant: merchant,
+        note: note,
+      ),
+    );
   }
 
   if (parseErrors.isNotEmpty) {
-    stderr.writeln('${parseErrors.length} row(s) failed structural validation:');
+    stderr.writeln(
+      '${parseErrors.length} row(s) failed structural validation:',
+    );
     for (final e in parseErrors) {
       stderr.writeln('  - $e');
     }
     if (!skipInvalid) {
-      _fail('Fix the CSV and re-run, or pass --skip-invalid to import the rest anyway.');
+      _fail(
+        'Fix the CSV and re-run, or pass --skip-invalid to import the rest anyway.',
+      );
     }
   }
 
@@ -209,7 +235,9 @@ void main(List<String> args) async {
   final email = _readLine()?.trim() ?? '';
   stdout.write('Password: ');
   final password = _readLine(hidden: true)?.trim() ?? '';
-  if (email.isEmpty || password.isEmpty) _fail('Email and password are required.');
+  if (email.isEmpty || password.isEmpty) {
+    _fail('Email and password are required.');
+  }
 
   final client = SupabaseClient(supabaseUrl, supabaseAnonKey);
   try {
@@ -219,42 +247,71 @@ void main(List<String> args) async {
   }
   final myId = client.auth.currentUser!.id;
 
-  final profile = await client.from('profiles').select('household_id, role, display_name').eq('id', myId).single();
+  final profile = await client
+      .from('profiles')
+      .select('household_id, role, display_name')
+      .eq('id', myId)
+      .single();
   final householdId = profile['household_id'] as String?;
   final isAdmin = profile['role'] == 'admin';
   if (householdId == null) _fail('Signed-in account has no household.');
   if (!isAdmin) {
     stdout.writeln(
-        'Warning: signed in as a non-admin. Only rows whose "member" matches your own '
-        'display name ("${profile['display_name']}") can be imported — RLS rejects the rest.');
+      'Warning: signed in as a non-admin. Only rows whose "member" matches your own '
+      'display name ("${profile['display_name']}") can be imported — RLS rejects the rest.',
+    );
   }
 
   // ── Resolve lookups against the real household ────────────────────
-  final members = await client.from('profiles').select('id, display_name').eq('household_id', householdId);
-  final categories = await client.from('categories').select('id, name').eq('household_id', householdId);
-  final paymentMethods = await client.from('payment_methods').select('id, name').eq('household_id', householdId);
+  final members = await client
+      .from('profiles')
+      .select('id, display_name')
+      .eq('household_id', householdId);
+  final categories = await client
+      .from('categories')
+      .select('id, name')
+      .eq('household_id', householdId);
+  final paymentMethods = await client
+      .from('payment_methods')
+      .select('id, name')
+      .eq('household_id', householdId);
 
-  final memberByName = _lookupByLowerName((members as List).cast<Map<String, dynamic>>(), 'display_name');
-  final categoryByName = _lookupByLowerName((categories as List).cast<Map<String, dynamic>>(), 'name');
-  final paymentMethodByName = _lookupByLowerName((paymentMethods as List).cast<Map<String, dynamic>>(), 'name');
+  final memberByName = _lookupByLowerName(
+    (members as List).cast<Map<String, dynamic>>(),
+    'display_name',
+  );
+  final categoryByName = _lookupByLowerName(
+    (categories as List).cast<Map<String, dynamic>>(),
+    'name',
+  );
+  final paymentMethodByName = _lookupByLowerName(
+    (paymentMethods as List).cast<Map<String, dynamic>>(),
+    'name',
+  );
 
   final toInsert = <Map<String, dynamic>>[];
   final lookupErrors = <String>[];
   for (final r in rows) {
     final userId = memberByName[r.member.toLowerCase()];
     if (userId == null) {
-      lookupErrors.add('Line ${r.lineNumber}: no household member named "${r.member}".');
+      lookupErrors.add(
+        'Line ${r.lineNumber}: no household member named "${r.member}".',
+      );
       continue;
     }
     if (!isAdmin && userId != myId) {
-      lookupErrors.add('Line ${r.lineNumber}: non-admin cannot import an expense for "${r.member}".');
+      lookupErrors.add(
+        'Line ${r.lineNumber}: non-admin cannot import an expense for "${r.member}".',
+      );
       continue;
     }
     String? categoryId;
     if (r.category != null) {
       categoryId = categoryByName[r.category!.toLowerCase()];
       if (categoryId == null) {
-        lookupErrors.add('Line ${r.lineNumber}: no category named "${r.category}".');
+        lookupErrors.add(
+          'Line ${r.lineNumber}: no category named "${r.category}".',
+        );
         continue;
       }
     }
@@ -262,7 +319,9 @@ void main(List<String> args) async {
     if (r.paymentMethod != null) {
       paymentMethodId = paymentMethodByName[r.paymentMethod!.toLowerCase()];
       if (paymentMethodId == null) {
-        lookupErrors.add('Line ${r.lineNumber}: no payment method named "${r.paymentMethod}".');
+        lookupErrors.add(
+          'Line ${r.lineNumber}: no payment method named "${r.paymentMethod}".',
+        );
         continue;
       }
     }
@@ -287,17 +346,26 @@ void main(List<String> args) async {
       stderr.writeln('  - $e');
     }
     if (!skipInvalid) {
-      _fail('Fix the CSV (member/category/payment_method names must match the household exactly) '
-          'and re-run, or pass --skip-invalid to import the rest anyway.');
+      _fail(
+        'Fix the CSV (member/category/payment_method names must match the household exactly) '
+        'and re-run, or pass --skip-invalid to import the rest anyway.',
+      );
     }
   }
 
-  if (toInsert.isEmpty) _fail('No valid rows to import after lookup validation.');
+  if (toInsert.isEmpty) {
+    _fail('No valid rows to import after lookup validation.');
+  }
 
-  final totalPaise = toInsert.fold<int>(0, (sum, r) => sum + (r['amount_paise'] as int));
-  stdout.writeln('\nReady to import ${toInsert.length} expense(s), '
-      'totalling ₹${(totalPaise / 100).toStringAsFixed(2)}, '
-      'into household $householdId.');
+  final totalPaise = toInsert.fold<int>(
+    0,
+    (sum, r) => sum + (r['amount_paise'] as int),
+  );
+  stdout.writeln(
+    '\nReady to import ${toInsert.length} expense(s), '
+    'totalling ₹${(totalPaise / 100).toStringAsFixed(2)}, '
+    'into household $householdId.',
+  );
   if (!autoYes) {
     stdout.write('Continue? [y/N] ');
     final confirm = _readLine()?.trim().toLowerCase();
@@ -311,7 +379,10 @@ void main(List<String> args) async {
   final insertErrors = <String>[];
   const chunkSize = 50;
   for (var i = 0; i < toInsert.length; i += chunkSize) {
-    final chunk = toInsert.sublist(i, i + chunkSize > toInsert.length ? toInsert.length : i + chunkSize);
+    final chunk = toInsert.sublist(
+      i,
+      i + chunkSize > toInsert.length ? toInsert.length : i + chunkSize,
+    );
     try {
       await client.from('expenses').insert(chunk);
       inserted += chunk.length;
@@ -323,7 +394,9 @@ void main(List<String> args) async {
           await client.from('expenses').insert(row);
           inserted++;
         } catch (rowError) {
-          insertErrors.add('id=${row['id']} spent_at=${row['spent_at']}: $rowError');
+          insertErrors.add(
+            'id=${row['id']} spent_at=${row['spent_at']}: $rowError',
+          );
         }
       }
     }

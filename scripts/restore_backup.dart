@@ -58,7 +58,9 @@ import 'dart:io';
 
 void main(List<String> args) {
   if (args.isEmpty) {
-    stderr.writeln('Usage: dart run scripts/restore_backup.dart <backup.json> > restore.sql');
+    stderr.writeln(
+      'Usage: dart run scripts/restore_backup.dart <backup.json> > restore.sql',
+    );
     exit(1);
   }
   final file = File(args.first);
@@ -93,8 +95,12 @@ void main(List<String> args) {
   buf.writeln('-- Clear any pre-existing seed/placeholder data for this');
   buf.writeln('-- household before restoring (see restore_backup.dart\'s');
   buf.writeln('-- top-of-file note on 0009_seed.sql\'s name collision).');
-  buf.writeln("delete from public.categories where household_id = ${_sqlValue(householdId)};");
-  buf.writeln("delete from public.payment_methods where household_id = ${_sqlValue(householdId)};");
+  buf.writeln(
+    "delete from public.categories where household_id = ${_sqlValue(householdId)};",
+  );
+  buf.writeln(
+    "delete from public.payment_methods where household_id = ${_sqlValue(householdId)};",
+  );
   buf.writeln();
 
   // households.created_by is a FK to profiles(id), which doesn't exist yet
@@ -116,18 +122,52 @@ void main(List<String> args) {
   // profile row (household_id null, a display name derived from the dummy
   // email) via `on conflict (id) do nothing` — so the real profiles insert
   // below must be an upsert, or the trigger's placeholder would win.
-  _insertAuthUsers(buf, (backup['profiles'] as List).cast<Map<String, dynamic>>());
-  _insertTable(buf, 'public.profiles', backup['profiles'], conflictCol: 'id', upsert: true);
-  _backfillDeferredColumn(buf, 'public.households', backup['households'], column: 'created_by');
-  _insertTable(buf, 'public.categories', backup['categories'], conflictCol: 'id');
-  _insertTable(buf, 'public.payment_methods', backup['payment_methods'], conflictCol: 'id');
+  _insertAuthUsers(
+    buf,
+    (backup['profiles'] as List).cast<Map<String, dynamic>>(),
+  );
+  _insertTable(
+    buf,
+    'public.profiles',
+    backup['profiles'],
+    conflictCol: 'id',
+    upsert: true,
+  );
+  _backfillDeferredColumn(
+    buf,
+    'public.households',
+    backup['households'],
+    column: 'created_by',
+  );
+  _insertTable(
+    buf,
+    'public.categories',
+    backup['categories'],
+    conflictCol: 'id',
+  );
+  _insertTable(
+    buf,
+    'public.payment_methods',
+    backup['payment_methods'],
+    conflictCol: 'id',
+  );
   // recurring_rules before expenses/incomes: expenses.recurring_rule_id and
   // incomes.recurring_rule_id are FKs into it.
-  _insertTable(buf, 'public.recurring_rules', backup['recurring_rules'], conflictCol: 'id');
+  _insertTable(
+    buf,
+    'public.recurring_rules',
+    backup['recurring_rules'],
+    conflictCol: 'id',
+  );
   _insertTable(buf, 'public.expenses', backup['expenses'], conflictCol: 'id');
   _insertTable(buf, 'public.incomes', backup['incomes'], conflictCol: 'id');
   _insertTable(buf, 'public.budgets', backup['budgets'], conflictCol: 'id');
-  _insertTable(buf, 'public.attachments', backup['attachments'], conflictCol: 'id');
+  _insertTable(
+    buf,
+    'public.attachments',
+    backup['attachments'],
+    conflictCol: 'id',
+  );
 
   buf.writeln('commit;');
   stdout.write(buf.toString());
@@ -144,17 +184,19 @@ void _insertAuthUsers(StringBuffer buf, List<Map<String, dynamic>> profiles) {
   for (final p in profiles) {
     final id = p['id'] as String;
     final email = 'restored-$id@restore.invalid';
-    buf.writeln('insert into auth.users '
-        '(id, instance_id, aud, role, email, email_confirmed_at, '
-        'created_at, updated_at, raw_app_meta_data, raw_user_meta_data, '
-        'is_sso_user, is_anonymous) values ('
-        '${_sqlUuid(id)}, '
-        "'00000000-0000-0000-0000-000000000000', "
-        "'authenticated', 'authenticated', "
-        '${_sqlString(email)}, now(), now(), now(), '
-        '\'{"provider":"email","providers":["email"]}\'::jsonb, '
-        "'{}'::jsonb, false, false"
-        ') on conflict (id) do nothing;');
+    buf.writeln(
+      'insert into auth.users '
+      '(id, instance_id, aud, role, email, email_confirmed_at, '
+      'created_at, updated_at, raw_app_meta_data, raw_user_meta_data, '
+      'is_sso_user, is_anonymous) values ('
+      '${_sqlUuid(id)}, '
+      "'00000000-0000-0000-0000-000000000000', "
+      "'authenticated', 'authenticated', "
+      '${_sqlString(email)}, now(), now(), now(), '
+      '\'{"provider":"email","providers":["email"]}\'::jsonb, '
+      "'{}'::jsonb, false, false"
+      ') on conflict (id) do nothing;',
+    );
   }
   buf.writeln();
 }
@@ -181,22 +223,31 @@ void _insertTable(
     final values = columns
         .map((c) => nullOutColumns.contains(c) ? 'NULL' : _sqlValue(row[c]))
         .join(', ');
-    buf.writeln('insert into $table (${columns.join(', ')}) '
-        'values ($values) on conflict ($conflictCol) $conflictAction;');
+    buf.writeln(
+      'insert into $table (${columns.join(', ')}) '
+      'values ($values) on conflict ($conflictCol) $conflictAction;',
+    );
   }
   buf.writeln();
 }
 
 /// Back-fills a column that had to be nulled out in [_insertTable] (a
 /// forward reference to a row inserted later), now that its target exists.
-void _backfillDeferredColumn(StringBuffer buf, String table, dynamic rowsJson, {required String column}) {
+void _backfillDeferredColumn(
+  StringBuffer buf,
+  String table,
+  dynamic rowsJson, {
+  required String column,
+}) {
   final rows = (rowsJson as List).cast<Map<String, dynamic>>();
   final withValue = rows.where((r) => r[column] != null).toList();
   if (withValue.isEmpty) return;
   buf.writeln('-- $table.$column (back-filled after its FK target exists)');
   for (final row in withValue) {
-    buf.writeln('update $table set $column = ${_sqlValue(row[column])} '
-        'where id = ${_sqlValue(row['id'])};');
+    buf.writeln(
+      'update $table set $column = ${_sqlValue(row[column])} '
+      'where id = ${_sqlValue(row['id'])};',
+    );
   }
   buf.writeln();
 }
