@@ -70,4 +70,7 @@ class ProfileDao extends DatabaseAccessor<AppDatabase> with _$ProfileDaoMixin {
       (update(profiles)..where((t) => t.id.equals(id))).write(
         ProfilesCompanion(baseUpdatedAt: Value(baseUpdatedAt)),
       );
+
+  Future<int> hardDelete(String id) =>
+      (delete(profiles)..where((t) => t.id.equals(id))).go();
 }

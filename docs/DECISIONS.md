@@ -4290,3 +4290,123 @@ version drift unrelated to this fix. Reverted those 3 files rather than
 bundling unrelated formatting churn into this change; worth reformatting
 properly in a dedicated pass later, on whatever `dart format` version
 this project intends to standardize on.
+
+## 2026-09-09 — Deleted-account profile cache gap: fixed and pushed to production
+
+Fixes the bug found live immediately after Gate M2's join-by-code test
+(PROGRESS.md's "[NEW, open, not fixed]" row, same day): deleting an
+account (F-18) never told other household members' devices the person
+was gone, because `profiles.id references auth.users(id) on delete
+cascade` hard-deleted the profile row in the same instant the
+account-deletion Edge Function hard-deleted the auth user. A hard
+delete leaves nothing for incremental sync to detect —
+`PullService`'s `selectSince(cursor)` only sees rows whose `updated_at`
+moved past the cursor, and a row that no longer exists produces no row
+at all. Root cause and workaround (a full "Clear cache and re-download"
+correctly excludes the deleted member, since it queries current server
+state directly) were already confirmed live; this session did the
+actual fix. No Android device was available this session (per the
+user), so this is implemented and unit-tested but **not live-verified**
+— per this project's batch-then-test-live precedent, deferred to a
+session with a device.
+
+### The fix: give `profiles` a real tombstone, like every other syncable table
+
+`profiles` was the only syncable table with no `deleted_at` column —
+`hasTombstones` was `false` for it by design, because until now its
+only way to "disappear" was the auth.users cascade. That's exactly
+backwards for sync: a row that vanishes without a trace is worse than
+a row that stays and says "I'm gone."
+
+1. **Migration `0017_profile_deletion_tombstone.sql`**: adds
+   `profiles.deleted_at`, and drops the FK's `on delete cascade` (found
+   by introspecting `pg_constraint` rather than assuming the default
+   constraint name, so the migration doesn't silently no-op if
+   production's name ever differs) — a `set null`/`restrict` action
+   couldn't work here: `set null` is impossible on a column that's also
+   the primary key, and `restrict`/`no action` would make
+   `admin.auth.admin.deleteUser()` itself fail once the profile row is
+   deliberately being kept. Dropping the FK entirely is the only option
+   that lets the auth identity go away while the profile record — now
+   established as this app's durable identity record, decoupled from
+   auth.users' lifecycle — survives it, exactly like a departed
+   member's row already survives leaving a household (see "Profiles-
+   tombstone gap", 2026-09-07).
+2. `delete_my_records()` (called by the Edge Function before it deletes
+   the auth user) now ends with
+   `update profiles set deleted_at = now(), is_active = false where id
+   = v_uid` instead of relying on the cascade.
+   `household_id` is **deliberately left untouched** — unlike
+   `leave_household()`'s null-out, because `profile_visible_to_me()`'s
+   existing "current member of your household" RLS branch
+   (`pr.household_id = current_household_id()`) already makes this
+   tombstone visible to former housemates purely by virtue of keeping
+   it, with zero RLS changes needed. The existing `trg_touch_profiles`
+   trigger stamps `updated_at` to `now()` automatically (it's a BEFORE
+   trigger firing on every UPDATE, and this update doesn't set
+   `updated_at` itself), which is exactly what lets `selectSince`
+   detect the tombstone on the next incremental pull.
+3. Client side (`entity_sync_adapters.dart`): `ProfileSyncAdapter.
+   hasTombstones` flipped to `true`, and `pullApply` gained the same
+   `if (json['deleted_at'] != null) { hardDelete(id); return; }` guard
+   every other tombstoned entity already has — copied, not
+   reinvented. `pushSoftDelete` still throws `UnsupportedError`:
+   nothing client-side ever soft-deletes a profile; the tombstone is
+   always server-written. New `ProfileDao.hardDelete()`, matching every
+   other DAO's method of the same name/shape.
+4. **The ripple effect this required finding, not just the headline
+   fix**: before this migration, a deleted profile could never linger
+   with a live `household_id` — the old cascade removed it outright —
+   so nothing that counts household members/admins by `household_id`
+   ever needed to exclude it. Point 2 changes that assumption. Every
+   SQL function that counts membership by `household_id` was
+   re-declared in the same migration with `and deleted_at is null`
+   added to its counts and target-membership lookups:
+   `delete_household()`'s "household not empty" check,
+   `leave_household()`'s and `set_member_role()`'s "last admin" checks,
+   and `set_member_active()`'s/`remove_member()`'s "is this actually a
+   member" lookups. Missed, any of these would have let a tombstoned
+   former member's row silently count toward "the household still has
+   other people in it" or "there's still another admin" — a
+   correctness regression introduced by fixing sync, not caught by
+   spot-checking the sync path alone. The Edge Function
+   (`supabase/functions/delete-account/index.ts`)'s own memberCount/
+   adminCount query got the same `.is("deleted_at", null)` filter.
+
+### Verified, not just written
+
+`fvm flutter analyze --fatal-infos` clean. `fvm flutter test` green at
+548 (2 new: `ProfileSyncAdapter`'s tombstone-hard-deletes-the-local-row
+case in `entity_sync_adapters_test.dart`, mirroring
+`CategorySyncAdapter`'s equivalent; `ProfileDao.hardDelete()`'s own
+round-trip test in `profile_dao_test.dart`). `dart format
+--set-exit-if-changed .` clean repo-wide.
+
+### Pushed to production, same session, with the user's explicit go-ahead
+
+This session had real `SUPABASE_ACCESS_TOKEN`/linked-project access
+(unlike several recent sessions where credentials weren't available),
+so — after presenting the finished, tested code and asking the user
+whether to deploy now or hold for the next batch, per this being a
+real production schema change — the user chose to deploy now:
+
+- `supabase db push --linked` applied `0017_profile_deletion_tombstone.sql`
+  cleanly. Verified after the fact, not just trusted the exit code:
+  `information_schema.columns` shows `profiles.deleted_at` now exists
+  (`timestamptz`); `pg_constraint` shows zero FK constraints from
+  `public.profiles` to `auth.users` remain (the cascade is genuinely
+  gone); every real production profile (Trupti, Tanish, Vineet, "Vineet
+  Panicker") still shows `deleted_at: null` and its real `household_id`
+  — the migration touched no live data.
+- `supabase functions deploy delete-account --project-ref
+  jqorwgiowfxxgjvayznj` succeeded; `supabase functions list` confirms
+  it's `ACTIVE` at version 2 (up from version 1), `updated_at` newer
+  than `created_at`.
+
+### Not live-verified
+
+An actual second device seeing a deleted member disappear from its
+roster after a normal "Sync now" (not a full cache-and-redownload) —
+needs an Android device, unavailable this session per the user. The
+schema and function are live and ready; this is purely a real-device
+test still owed.

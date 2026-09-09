@@ -83,4 +83,24 @@ void main() {
     final everyKnownProfile = await db.profileDao.watchAllKnown().first;
     expect(everyKnownProfile.map((p) => p.id).toSet(), {'u1', 'u2'});
   });
+
+  test(
+    'hardDelete removes the row entirely (a deleted account\'s tombstone)',
+    () async {
+      final now = DateTime.utc(2026, 9, 9);
+      await db.profileDao.upsert(
+        ProfilesCompanion.insert(
+          id: 'u1',
+          householdId: const Value('h1'),
+          displayName: 'Vintya',
+          createdAt: now,
+          updatedAt: now,
+        ),
+      );
+
+      final rowsDeleted = await db.profileDao.hardDelete('u1');
+      expect(rowsDeleted, 1);
+      expect(await db.profileDao.findById('u1'), isNull);
+    },
+  );
 }
