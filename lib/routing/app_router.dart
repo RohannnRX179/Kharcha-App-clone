@@ -8,6 +8,7 @@ import '../features/account/screens/account_deleted_screen.dart';
 import '../features/account/screens/account_screen.dart';
 import '../features/analytics/screens/analytics_screen.dart';
 import '../features/auth/screens/login_screen.dart';
+import '../features/auth/screens/reset_password_screen.dart';
 import '../features/auth/screens/signup_screen.dart';
 import '../features/auth/screens/splash_screen.dart';
 import '../features/auth/screens/verify_email_screen.dart';
@@ -130,6 +131,12 @@ GoRouter appRouter(Ref ref) {
         return loc == AppRoutes.verifyEmail ? null : AppRoutes.verifyEmail;
       }
 
+      // Reachable regardless of household state: a password-recovery
+      // session (`AuthChangeEvent.passwordRecovery`, see `app.dart`) can
+      // belong to a member who has since left every household, and the
+      // reset must not be interrupted by a bounce to onboarding.
+      if (loc == AppRoutes.resetPassword) return null;
+
       final householdId = ref.read(currentHouseholdIdProvider);
       final onOnboardingFlow = loc.startsWith(AppRoutes.onboarding);
       if (householdId == null) {
@@ -160,6 +167,11 @@ GoRouter appRouter(Ref ref) {
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) =>
             VerifyEmailScreen(email: state.extra as String?),
+      ),
+      GoRoute(
+        path: AppRoutes.resetPassword,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const ResetPasswordScreen(),
       ),
       GoRoute(
         path: AppRoutes.onboarding,

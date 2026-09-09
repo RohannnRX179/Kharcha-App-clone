@@ -7,6 +7,7 @@ class AppRoutes {
   static const login = '/login';
   static const signup = '/signup';
   static const verifyEmail = '/verify-email';
+  static const resetPassword = '/reset-password';
   static const onboarding = '/onboarding';
   static const onboardingCreate = '/onboarding/create';
   static const onboardingJoin = '/onboarding/join';

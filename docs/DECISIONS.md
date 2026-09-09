@@ -4217,3 +4217,76 @@ needs you, the app is not ready for the second").
 
 **Not implemented this session, deliberately** — the user asked for the
 plan documented now and to build it later themselves.
+
+## 2026-09-09 — Auth email deep-link fix implemented
+
+All 8 plan points above, in a later session the same day:
+
+1/2. `AndroidManifest.xml` gained a second `<intent-filter>` on
+   `MainActivity` (`android:autoVerify="false"`, `VIEW`/`DEFAULT`/
+   `BROWSABLE`, `data android:scheme="io.supabase.kharcha"
+   android:host="login-callback"`). `Info.plist` gained a
+   `CFBundleURLTypes` entry with the same scheme. Neither needed an
+   `applicationId`-matching scheme — this is a private custom scheme
+   Supabase's docs use by convention, unrelated to `com.panicker.kharcha`.
+3. `AppConstants.authCallbackUrl` (new constant,
+   `io.supabase.kharcha://login-callback/`) is now passed explicitly as
+   `emailRedirectTo` on `signUp()`/`resend()` and `redirectTo` on
+   `resetPasswordForEmail()` in `auth_repository.dart`.
+4. Supabase Dashboard → Authentication → URL Configuration → Site URL
+   changed from `http://localhost:3000` to the same custom-scheme URL,
+   via Claude-in-Chrome with the user's explicit go-ahead (this is a
+   live production auth setting). Turned out the Redirect URLs
+   allow-list already had this exact URL from T-M1.8 — only the Site
+   URL field itself, the actual default, had never been changed.
+5. New `/reset-password` route + `ResetPasswordScreen`
+   (`lib/features/auth/screens/reset_password_screen.dart`), reached
+   only via a new `ref.listen(authStateChangesProvider, ...)` in
+   `app.dart` that calls `GoRouter.of(context).go(AppRoutes.resetPassword)`
+   on `AuthChangeEvent.passwordRecovery`. `app_router.dart`'s `redirect`
+   exempts `/reset-password` unconditionally once signed in (checked
+   before the household-null branch), since a recovery session can
+   belong to a member who has since left every household — without the
+   exemption they'd be bounced to `/onboarding` before ever seeing the
+   form.
+6. Confirmed in practice, not just assumed: `supabase_flutter` 2.17.2's
+   existing `app_links`-backed deep-link handling needed no extra
+   Dart-side listener code beyond point 5 — registering the native
+   scheme (1/2) was sufficient for the SDK to pick up the incoming URL
+   itself and fire the auth-state event.
+7. `VerifyEmailScreen` gained the permanent "Already tapped the link?
+   Sign in" text button (signs out, then `context.go(AppRoutes.login)`
+   — signing out first avoids the router bouncing straight back here
+   given a lingering unconfirmed session) and a 5s resume-triggered
+   `SnackBar` nudge toward the same action, shown only if the screen is
+   still mounted more than 20s (`_resumeNudgeGrace`) after a resume —
+   i.e. confirmation still hasn't landed by the time a real link-tap
+   would plausibly have resolved it.
+8. Not done this session: a new signed build/re-release, and the live
+   re-test — both still gate Gate M2's brand-new-signup item and Ring 3
+   (§16.4), per the plan's own point 8.
+
+**Verified, not just written**: `fvm flutter analyze --fatal-infos`
+clean; `fvm flutter test` green at 546 (up from 540 — 6 new: 4 in a new
+`reset_password_screen_test.dart`, 2 in a new
+`verify_email_screen_test.dart`; the 6 pre-existing
+`auth_repository_test.dart` cases that stub `signUp`/`resend`/
+`resetPasswordForEmail` were updated for the new named argument).
+`dart format --set-exit-if-changed` clean on every file this change
+touched. `fvm flutter build apk --debug --dart-define-from-file=config/dev.json`
+succeeds; confirmed the new intent-filter actually lands in the merged
+manifest (`build/app/intermediates/merged_manifest/debug/processDebugMainManifest/AndroidManifest.xml`
+contains the `login-callback` data element), not just the source one.
+**Not live-verified**: an actual tapped email link landing back in the
+app on a device — needs a new signed build first (point 8), per this
+project's own batch-then-test-live precedent.
+
+**Found and deliberately left alone**: running `dart format .` on the
+whole repo reformats 3 unrelated pre-existing files
+(`lib/data/sync/entity_sync_adapters.dart`,
+`test/unit/db/profile_dao_test.dart`,
+`test/unit/sync/push_conflict_resolution_test.dart`) — a formatter
+version drift unrelated to this fix. Reverted those 3 files rather than
+bundling unrelated formatting churn into this change; worth reformatting
+properly in a dedicated pass later, on whatever `dart format` version
+this project intends to standardize on.

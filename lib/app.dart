@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'core/constants/app_constants.dart';
@@ -17,6 +18,7 @@ import 'data/repositories/update_check_repository.dart';
 import 'data/sync/sync_engine.dart';
 import 'routing/app_router.dart';
 import 'routing/root_navigator_key.dart';
+import 'routing/routes.dart';
 
 /// Also wires 2 of the sync engine's 6 trigger points (spec §9.6, T-4.5):
 /// app start once auth resolves (1) and app resume, throttled to once per
@@ -171,6 +173,21 @@ class _KharchaAppState extends ConsumerState<KharchaApp>
         // backgrounded and resumed at least once. Caught live 2026-09-08:
         // `profiles.last_seen_at` stayed NULL through a real sign-in.
         ref.read(householdRepositoryProvider).touchActivityIfDue();
+      }
+    });
+
+    // Password-recovery deep link (`AppConstants.authCallbackUrl`,
+    // `AuthRepository.resetPassword`): Supabase establishes a real,
+    // narrowly-scoped session and fires this event the moment the tapped
+    // email link lands back in the app. Routed here rather than from
+    // `app_router.dart`'s `redirect` because `redirect` only re-runs on a
+    // navigation attempt or a `refreshListenable` tick — this reacts to the
+    // event directly, the same way `didChangeAppLifecycleState` needs an
+    // explicit push rather than waiting for one.
+    ref.listen(authStateChangesProvider, (previous, next) {
+      if (next.value?.event == AuthChangeEvent.passwordRecovery) {
+        final context = rootNavigatorKey.currentContext;
+        if (context != null) GoRouter.of(context).go(AppRoutes.resetPassword);
       }
     });
 
